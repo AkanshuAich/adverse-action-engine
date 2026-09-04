@@ -265,12 +265,62 @@ Tests use a deterministic hashing embedder rather than downloading a model. A
 build that fails because a model host was slow has told you nothing about the
 code.
 
+## Measured results
+
+100 declined applications, run end to end. Against a simulated provider with a
+deliberately pessimistic failure distribution:
+
+| Metric | Result |
+|---|---|
+| Groundedness rate (first attempt, unaided) | 54.0% |
+| Post-repair rate (issued) | 97.0% |
+| Escalation rate | 3.0% |
+| Factor fidelity | 88.3% |
+| Citation precision | 82.0% |
+| Element coverage | 99.8% |
+| **Prohibited content in issued notices** | **0.0000** |
+| Prohibited proposals caught | 2 |
+| Mean attempts | 1.48 |
+| Readability (Flesch) | 63.0 |
+
+The shape of that is the point. The model gets it right unaided barely half the
+time. The verifier catches the rest — 100 violations across six checks — and
+the repair loop turns most of them into issuable notices. Three per cent could
+not be made truthful and went to a human. **Nothing ungrounded reached an
+applicant**, and the prohibited-content check fired twice, so that zero is a
+measurement rather than an absence of testing.
+
+**What this measures, and what it does not.** These figures describe how the
+*system* handles a fixed distribution of model mistakes. They are not a claim
+about any real model's quality. Reporting one as the other would be exactly the
+dishonesty this project argues against. Live figures come from running the same
+harness with `--provider cerebras`, which is a manual step because a gate that
+needs a credential and a rate limit cannot run in CI.
+
+```bash
+python -m evals.runner --provider simulated          # the CI gate
+python -m evals.runner --provider cerebras --throttle 2   # live figures
+```
+
+## The gate
+
+CI fails a merge when a gated metric falls more than three points below the
+committed baseline, or when a prohibited reference reaches an issued notice.
+
+The baseline is a committed measurement rather than a fixed threshold.
+Absolute thresholds either sit so low they never fire or get raised until
+somebody turns them off; a baseline answers the question a reviewer actually
+has, which is whether this change made things worse.
+
+Groundedness is measured on the **first** attempt, before any repair. Reporting
+the post-repair figure would credit the verifier's work to the model.
+
 ## Status
 
-Week 5 of 8 complete. Foundation, audit log, data layer, calibrated model,
-per-decision explanations, the decision API, the verifier, and generation with
-a bounded repair loop.
-Next: the evaluation harness — turning "it works" into a measured number.
+Week 6 of 8 complete. Foundation, audit log, data layer, calibrated model,
+per-decision explanations, the decision API, the verifier, generation with a
+bounded repair loop, and a CI-gated evaluation harness.
+Next: fairness analysis, drift monitoring, and the underwriter console.
 
 ## Licence
 

@@ -81,6 +81,20 @@ jobs:
             echo "Verifier not implemented yet (week 4); skipping its coverage gate."
           fi
 
+      - name: Evaluation gate
+        # Runs the golden set against a simulated provider with a fixed,
+        # deliberately pessimistic failure distribution.
+        #
+        # This measures how the SYSTEM handles model mistakes - whether the
+        # verifier catches them and whether the repair prompt is specific
+        # enough to fix them. It does not measure how good any real model is.
+        # Those are different questions, and the headline figures for a live
+        # backend come from running the same harness manually against one.
+        #
+        # The gate fails on a regression against the committed baseline, and
+        # unconditionally if a prohibited reference reaches an issued notice.
+        run: uv run python -m evals.runner --provider simulated --no-report
+
   security:
     name: Security scans
     runs-on: ubuntu-latest

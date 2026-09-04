@@ -90,7 +90,11 @@ class ExecutionStep:
         attempt: Which generation attempt it belonged to.
         prompt_hash: Hash of the prompt sent, if any.
         response_hash: Hash of the response received, if any.
-        violations: Violations produced by this step.
+        violations: Violations produced by this step, rendered for a prompt.
+        violation_codes: The same violations as codes, so metrics can be
+            counted without parsing rendered text.
+        reasons: How many principal reasons this attempt proposed.
+        citations: How many citations this attempt proposed.
     """
 
     node: str
@@ -98,6 +102,9 @@ class ExecutionStep:
     prompt_hash: str | None = None
     response_hash: str | None = None
     violations: tuple[str, ...] = ()
+    violation_codes: tuple[str, ...] = ()
+    reasons: int = 0
+    citations: int = 0
 
 
 @dataclass(frozen=True)
@@ -154,6 +161,9 @@ class GenerationOutcome:
                     "prompt_hash": step.prompt_hash,
                     "response_hash": step.response_hash,
                     "violations": list(step.violations),
+                    "violation_codes": list(step.violation_codes),
+                    "reasons": step.reasons,
+                    "citations": step.citations,
                 }
                 for step in self.trace
             ],
@@ -221,6 +231,8 @@ class NoticeGenerator:
             attempt=attempt,
             prompt_hash=_digest(user),
             response_hash=_digest(selected.model_dump_json()),
+            reasons=len(selected.principal_reasons),
+            citations=len(selected.citations),
         )
         return {
             "selected": selected,
@@ -240,6 +252,7 @@ class NoticeGenerator:
             node="verify",
             attempt=state["attempt"],
             violations=tuple(result.rendered_violations()),
+            violation_codes=tuple(v.code.value for v in result.violations),
         )
         return {"result": result, "trace": [*state.get("trace", []), step]}
 
@@ -285,6 +298,7 @@ class NoticeGenerator:
             node="check_prose",
             attempt=state["attempt"],
             violations=tuple(v.render() for v in violations),
+            violation_codes=tuple(v.code.value for v in violations),
         )
         return {"prose_violations": violations, "trace": [*state.get("trace", []), step]}
 

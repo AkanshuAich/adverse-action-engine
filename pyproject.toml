@@ -133,8 +133,9 @@ warn_return_any = true
 disallow_any_explicit = false
 show_error_codes = true
 plugins = ["pydantic.mypy"]
-mypy_path = "src"
-packages = ["aae"]
+mypy_path = "src:."
+# evals is real code that gates merges, so it is type-checked too.
+packages = ["aae", "evals"]
 
 [[tool.mypy.overrides]]
 module = [
