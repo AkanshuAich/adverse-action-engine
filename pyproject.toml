@@ -39,7 +39,12 @@ ai = [
     "langgraph>=0.2.50",
     "langchain-core>=0.3.20",
     "fastembed>=0.4",
-    "textstat>=0.7",
+    # textstat (readability, week 6) is deliberately not here yet. It pulls
+    # nltk transitively, which currently carries PYSEC-2026-3740 with no fix
+    # released - the same advisory that deferred evidently. Flesch reading
+    # ease is a short formula; if nltk is still unfixed when week 6 needs the
+    # metric, implementing it directly beats taking a vulnerable dependency
+    # for one number.
     # Presidio is deliberately absent. It detects PII in free text, and this
     # payload contains none: the prompt is assembled from an allowlist of
     # named features and their numeric values, so nothing unlisted can reach a

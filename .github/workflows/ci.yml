@@ -39,10 +39,12 @@ jobs:
         run: uv venv --python 3.12
 
       - name: Install dependencies
-        # The ml extras are required, not optional: mypy type-checks
-        # src/aae/ml and src/aae/data, and both test suites exercise the model
-        # pipeline. Installing only [dev] fails at import.
-        run: uv pip install -e ".[dev,ml]"
+        # Every extra is required, not optional. mypy type-checks the whole
+        # package, and the test suites exercise the model pipeline, the
+        # generation graph and the retrieval store. Installing a subset fails
+        # at import - which is how [ai] came to be missing here in the first
+        # place, and why mypy passed locally while failing in CI.
+        run: uv pip install -e ".[dev,ml,ai]"
 
       - name: Ruff lint
         run: uv run ruff check . --output-format github
@@ -110,7 +112,7 @@ jobs:
         # than on a real finding. `--skip-editable` does not help: strict mode
         # treats a skipped package as a failure too.
         run: |
-          uv pip compile pyproject.toml --extra dev --extra ml -o /tmp/requirements.txt
+          uv pip compile pyproject.toml --extra dev --extra ml --extra ai -o /tmp/requirements.txt
           uv pip install pip-audit
           uv run pip-audit -r /tmp/requirements.txt --strict
 
