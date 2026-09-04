@@ -127,3 +127,100 @@ class TestJurisdictionShape:
         )
         assert other.required_keys == {"reasons"}
         assert other.prohibited_patterns[0].search("this is Forbidden") is not None
+
+
+class TestUsRegulationB:
+    """The second jurisdiction, which is the point of having an interface.
+
+    If adding it had required changing the base module, the abstraction would
+    have been wishful thinking.
+    """
+
+    def test_uses_the_same_jurisdiction_type(self):
+        from aae.jurisdiction.base import Jurisdiction
+        from aae.jurisdiction.us_regb import US_REG_B
+
+        assert isinstance(US_REG_B, Jurisdiction)
+
+    def test_caps_reasons_at_four(self):
+        """12 CFR 1002.9, Official Interpretation: four is enough."""
+        from aae.jurisdiction.us_regb import US_REG_B
+
+        assert US_REG_B.max_principal_reasons == 4
+
+    def test_requires_elements_india_does_not(self):
+        from aae.jurisdiction.india_rbi import INDIA_RBI
+        from aae.jurisdiction.us_regb import US_REG_B
+
+        assert US_REG_B.required_keys - INDIA_RBI.required_keys == {
+            "ecoa_notice",
+            "creditor_contact",
+        }
+
+    def test_the_ecoa_notice_is_a_prose_element(self):
+        """It is required statutory text, checked against the letter."""
+        from aae.jurisdiction.us_regb import US_REG_B
+
+        element = US_REG_B.element("ecoa_notice")
+        assert element is not None
+        assert not element.checkable_structurally
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "You receive public assistance.",
+            "Applicants on welfare are higher risk.",
+            "Your color was considered.",
+            "You exercised rights under the Act.",
+        ],
+    )
+    def test_catches_prohibited_bases_specific_to_ecoa(self, text: str):
+        """Receipt of public assistance is the one people forget.
+
+        It does not look like a demographic characteristic, and it is a
+        prohibited basis under ECOA all the same.
+        """
+        from aae.jurisdiction.us_regb import US_REG_B
+
+        assert any(pattern.search(text) for pattern in US_REG_B.prohibited_patterns)
+
+    def test_still_catches_the_shared_prohibited_bases(self):
+        from aae.jurisdiction.us_regb import US_REG_B
+
+        assert any(
+            pattern.search("Your marital status was considered.")
+            for pattern in US_REG_B.prohibited_patterns
+        )
+
+
+class TestUsCorpus:
+    def test_provisions_resolve(self):
+        from aae.retrieval.corpus import REGULATION_B, us_reg_b_corpus
+
+        corpus = us_reg_b_corpus()
+        passage = corpus.passage(REGULATION_B, "1002.9(b)(2)")
+        assert passage is not None
+        assert "principal reason or reasons" in passage
+
+    def test_carries_the_provision_that_makes_this_project_necessary(self):
+        """1002.9(b)(2) says a score alone is not a sufficient reason.
+
+        Which is precisely what the verifier enforces: a notice must name the
+        factors, checked against the model's own attributions.
+        """
+        from aae.retrieval.corpus import REGULATION_B, us_reg_b_corpus
+
+        passage = us_reg_b_corpus().passage(REGULATION_B, "1002.9(b)(2)")
+        assert passage is not None
+        assert "insufficient" in passage
+
+    def test_the_two_corpora_are_separate(self):
+        from aae.retrieval.corpus import (
+            RBI_FAIR_PRACTICES_CODE,
+            REGULATION_B,
+            india_rbi_corpus,
+            us_reg_b_corpus,
+        )
+
+        assert us_reg_b_corpus().passage(RBI_FAIR_PRACTICES_CODE, "2.3") is None
+        assert india_rbi_corpus().passage(REGULATION_B, "1002.9(a)(2)") is None

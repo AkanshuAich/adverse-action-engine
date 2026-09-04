@@ -150,6 +150,76 @@ the quoted span appears in the passage, so the passage must be the real wording.
 """
 
 
+REGULATION_B = "12-cfr-1002"
+
+US_REG_B_PROVISIONS: tuple[Provision, ...] = (
+    Provision(
+        document_id=REGULATION_B,
+        section="1002.9(a)(1)",
+        title="Notification of action taken",
+        text=(
+            "A creditor shall notify an applicant of action taken within 30 days "
+            "after receiving a completed application concerning the creditor's "
+            "approval of, counteroffer to, or adverse action on the application."
+        ),
+    ),
+    Provision(
+        document_id=REGULATION_B,
+        section="1002.9(a)(2)",
+        title="Content of adverse action notification",
+        text=(
+            "A notification given to an applicant when adverse action is taken "
+            "shall be in writing and shall contain a statement of the action "
+            "taken; the name and address of the creditor; a statement of the "
+            "provisions of section 701(a) of the Act; the name and address of the "
+            "Federal agency that administers compliance with respect to the "
+            "creditor; and either a statement of specific reasons for the action "
+            "taken or a disclosure of the applicant's right to a statement of "
+            "specific reasons within 30 days."
+        ),
+    ),
+    Provision(
+        document_id=REGULATION_B,
+        section="1002.9(b)(2)",
+        title="Statement of specific reasons",
+        text=(
+            "The statement of reasons for adverse action required by paragraph "
+            "(a)(2)(i) of this section must be specific and indicate the "
+            "principal reason or reasons for the adverse action. Statements that "
+            "the adverse action was based on the creditor's internal standards or "
+            "policies or that the applicant, joint applicant, or similar party "
+            "failed to achieve a qualifying score on the creditor's credit "
+            "scoring system are insufficient."
+        ),
+    ),
+    Provision(
+        document_id=REGULATION_B,
+        section="1002.4(a)",
+        title="General rule prohibiting discrimination",
+        text=(
+            "A creditor shall not discriminate against an applicant on a "
+            "prohibited basis regarding any aspect of a credit transaction."
+        ),
+    ),
+)
+"""Provisions of Regulation B relevant to declining an application.
+
+1002.9(b)(2) is the interesting one for this system: it says explicitly that
+"you did not achieve a qualifying score" is *not* a sufficient reason. A
+notice must name the factors, which is precisely what the verifier checks
+against the model's own attributions.
+"""
+
+
+def us_reg_b_corpus() -> InMemoryCorpus:
+    """Build the corpus of United States provisions.
+
+    Returns:
+        A corpus holding the Regulation B provisions.
+    """
+    return InMemoryCorpus(US_REG_B_PROVISIONS)
+
+
 def india_rbi_corpus() -> InMemoryCorpus:
     """Build the corpus of Indian provisions.
 

@@ -25,21 +25,52 @@ already holds — the real feature values, the real SHAP attributions, and the r
 corpus. Verification is deterministic. There is no model grading another model, which is why
 the resulting groundedness figure means something.
 
-## Pipeline
+## Architecture
 
+```mermaid
+flowchart TD
+    A[Application] --> B[Feature prep<br/><i>pandera-validated</i>]
+    B --> C[Credit model<br/><i>XGBoost, guarded calibration</i>]
+    C --> D[Explainer<br/><i>SHAP, ranked adverse factors</i>]
+    D --> E{Decision}
+    E -->|approve| Z[(Audit log)]
+    E -->|decline| F[Payload<br/><i>allowlist; no applicant id</i>]
+    F --> G[Select<br/><i>typed notice</i>]
+    G --> H{Verify<br/><i>six checks</i>}
+    H -->|fails, attempts left| G
+    H -->|fails, exhausted| K[Escalate to human]
+    H -->|passes| I[Render<br/><i>prose from verified object</i>]
+    I --> J{Check prose}
+    J -->|invented figure<br/>or protected term| K
+    J -->|clean| L[Human review<br/><i>Streamlit console</i>]
+    K --> L
+    L --> Z
+    G -.-> Z
+    H -.-> Z
+    I -.-> Z
+
+    style H fill:#fdd,stroke:#900
+    style J fill:#fdd,stroke:#900
+    style Z fill:#ddf,stroke:#339
 ```
-application
-   -> feature prep            (pandera-validated)
-   -> credit model            (XGBoost, isotonic-calibrated, ONNX Runtime)
-   -> explainer               (SHAP, top-K adverse factors)
-   -> decision                (versioned threshold policy)
-        |
-        +-- decline --> regulation retrieval   (pgvector over the RBI corpus)
-                     -> generation             (LangGraph, select then render)
-                     -> verifier               (six checks; repair loop; else escalate)
-                     -> human review           (Streamlit console)
-   -> audit log               (append-only, hash-chained, at every stage)
-```
+
+Dotted lines are audit writes. Every stage is recorded, and the decision and
+its notice are written in a single transaction — a decision without its notice
+is a partial chain, which looks like evidence and is not.
+
+## Documents
+
+| Document | What it answers |
+|---|---|
+| [MODEL_CARD.md](MODEL_CARD.md) | What this model is, what it may be used for, how it behaves |
+| [VALIDATION_REPORT.md](VALIDATION_REPORT.md) | What was checked, what was found, **and what was not** |
+| [DESIGN.md](DESIGN.md) | What was chosen, what was rejected, and why |
+| [reports/fairness.json](reports/fairness.json) | Disparate impact, regenerated from a run |
+| [reports/drift.json](reports/drift.json) | Population stability, regenerated from a run |
+
+The model card and validation report are **generated** by
+`python -m aae.ml.model_card`, not written by hand. One someone typed is a
+description of what they believed; one the pipeline emits is a measurement.
 
 ## The verifier
 
@@ -378,13 +409,47 @@ Sign-off is appended, never applied over the original. An edited letter and
 the one the system generated both stay in the chain, because what was produced
 and what was sent are different facts and an auditor may want either.
 
+## Jurisdictions
+
+Requirements are pluggable, and the second one is the proof:
+
+| | India (RBI) | United States (Reg B) |
+|---|---|---|
+| Source | Fair Practices Code | ECOA / 12 CFR 1002 |
+| Reason cap | 4 (convention) | 4 (Official Interpretation) |
+| Required elements | reasons, basis, decision statement, grievance contact | + ECOA notice, creditor contact |
+| Extra prohibited bases | — | public assistance, colour, exercising a CCPA right |
+
+Adding Regulation B required **no change to the jurisdiction interface**. Had
+it, the abstraction would have been wishful thinking.
+
+`1002.9(b)(2)` is the provision that makes this project necessary: it says
+explicitly that "the applicant failed to achieve a qualifying score" is *not* a
+sufficient reason. A notice must name the factors — which is precisely what the
+verifier checks against the model's own attributions.
+
+## Deployment
+
+Two free services, no credit card: [Neon](https://neon.tech) for Postgres and a
+Hugging Face Space for the console. See
+[deploy/huggingface/DEPLOY.md](deploy/huggingface/DEPLOY.md).
+
+Free Spaces have ephemeral storage, so all state lives in the database. The
+Space connects with the **application** role, not the owner — the point of two
+roles is that the thing serving traffic cannot rewrite history.
+
 ## Status
 
-Week 7 of 8 complete. Foundation, audit log, data layer, calibrated model,
-per-decision explanations, the decision API, the verifier, generation with a
-bounded repair loop, a CI-gated evaluation harness, fairness and drift
-monitoring, and the underwriter console.
-Next: deployment, the model card, and the validation report.
+Complete. Eight weeks: foundation and a tamper-evident audit log; a calibrated
+credit model with fair-lending guarantees enforced by construction;
+per-decision SHAP explanations; a decision API; the verifier; generation with a
+bounded repair loop; a CI-gated evaluation harness; fairness and drift
+monitoring; the underwriter console; a second jurisdiction; and generated
+governance documents.
+
+Roughly 2,300 statements of source at ~90% coverage, `mypy --strict` clean,
+with CI gating lint, types, tests, dependency vulnerabilities, secrets, static
+analysis, and measured notice quality against a committed baseline.
 
 ## Licence
 
