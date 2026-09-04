@@ -18,7 +18,7 @@ from aae.data.loaders import DataSource, load_applications
 from aae.data.schema import validate_applications
 from aae.data.synthetic import BASE_DEFAULT_RATE, generate_applications
 from aae.domain.errors import DataValidationError, ModelError
-from aae.ml.calibration import Calibrator
+from aae.ml.calibration import PROBABILITY_EPSILON, Calibrator
 from aae.ml.features import PROTECTED_ATTRIBUTES, build_features
 from aae.ml.registry import METADATA_FILENAME, load_model, save_model
 from aae.ml.train import train_model
@@ -107,7 +107,12 @@ class TestSchemaValidation:
 
 
 class TestCalibrator:
-    def test_matches_sklearn_within_floating_point(self):
+    def test_matches_sklearn_apart_from_the_boundary_clamp(self):
+        """Agreement is exact except where scikit-learn returns 0 or 1.
+
+        Those are clamped deliberately, so the tolerance here is the clamp
+        width rather than floating-point noise.
+        """
         rng = np.random.default_rng(0)
         raw = rng.uniform(0, 1, 2_000)
         outcomes = (rng.uniform(0, 1, 2_000) < raw).astype(int)
@@ -117,7 +122,30 @@ class TestCalibrator:
         ours = Calibrator.from_sklearn(fitted)
 
         probe = np.linspace(0, 1, 500)
-        assert np.allclose(ours.predict(probe), fitted.predict(probe), atol=1e-9)
+        assert np.allclose(ours.predict(probe), fitted.predict(probe), atol=PROBABILITY_EPSILON)
+
+    def test_never_returns_a_degenerate_probability(self):
+        """Isotonic emits exact 0 and 1 from pooled single-class regions.
+
+        On the real model that was 43% of applications receiving a stated 0%
+        chance of default. No model licenses certainty, an audit record
+        asserting it is indefensible, and log-odds of 0 or 1 are not finite.
+        """
+        rng = np.random.default_rng(1)
+        raw = rng.uniform(0, 1, 3_000)
+        # Perfectly separable, so isotonic produces flat 0 and 1 regions.
+        outcomes = (raw > 0.5).astype(int)
+
+        fitted = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+        fitted.fit(raw, outcomes)
+
+        assert fitted.predict(np.array([0.1, 0.9])).tolist() == [0.0, 1.0]
+
+        ours = Calibrator.from_sklearn(fitted)
+        calibrated = ours.predict(np.linspace(0, 1, 500))
+        assert calibrated.min() > 0.0
+        assert calibrated.max() < 1.0
+        assert np.isfinite(np.log(calibrated / (1 - calibrated))).all()
 
     def test_is_monotone(self):
         calibrator = Calibrator(thresholds=(0.0, 0.5, 1.0), values=(0.0, 0.3, 0.9))

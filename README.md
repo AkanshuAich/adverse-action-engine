@@ -129,10 +129,47 @@ guarantee is that calibration never makes a quoted probability worse.
 positive rate and destroys calibration by construction, and a denial rests on a
 probability threshold, not a ranking.
 
+## Explaining a decision
+
+SHAP attributes each decision to its individual features, ranked by how far
+they moved the score. Those factors are the ground truth the verifier will
+check generated reasons against: if a notice names a factor, it must appear
+here with a matching direction.
+
+One subtlety, because a reviewer will ask. SHAP explains the booster's raw
+log-odds, not the calibrated probability the threshold is applied to. That is
+sound because calibration is *monotone*: it can move where the threshold sits
+but cannot reorder two applicants or flip the sign of a contribution, so the
+ranking and direction of factors survive it exactly. A test asserts this rather
+than assuming it.
+
+## API
+
+```
+GET  /health                            model version, threshold, chain state
+POST /v1/decisions                      score, explain, and record
+GET  /v1/decisions/{id}/audit           reconstruct a decision from the chain
+GET  /v1/audit/verify                   recompute every hash in the chain
+```
+
+A decision and its audit record are inseparable. If the audit write fails the
+request fails, because returning a decision that was not recorded is exactly
+the unauditable outcome this system exists to prevent.
+
+The API will not accept sex, age, or marital status at all. They cannot
+lawfully influence the outcome, so there is no reason to collect them in order
+to score one application.
+
+Appends are serialised with a Postgres transaction-level advisory lock.
+Extending a hash chain means reading the tail, so concurrent writers would
+otherwise fork it, and a forked chain is not evidence of anything. A test runs
+twenty threads at once and verifies the result is a single unbroken chain.
+
 ## Status
 
-Week 2 of 8 complete. Foundation, audit log, data layer, and calibrated model.
-Next: SHAP explainability and decision recording.
+Week 3 of 8 complete. Foundation, audit log, data layer, calibrated model,
+per-decision explanations, and the decision API.
+Next: the verifier.
 
 ## Licence
 

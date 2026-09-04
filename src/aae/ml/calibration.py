@@ -15,7 +15,7 @@ object buys three things.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Final, Self
 
 import numpy as np
 
@@ -23,6 +23,14 @@ from aae.domain.errors import ModelError
 
 if TYPE_CHECKING:
     from sklearn.isotonic import IsotonicRegression
+
+PROBABILITY_EPSILON: Final[float] = 1e-6
+"""How far a fitted calibrator's output is kept from 0 and 1.
+
+Applies to fitted calibrators only. The identity calibrator's knots are 0.0 and
+1.0 by definition and describe a mapping, not a posterior, so they are left
+alone.
+"""
 
 
 @dataclass(frozen=True)
@@ -101,7 +109,18 @@ class Calibrator:
             raise ModelError(msg)
         return cls(
             thresholds=tuple(float(x) for x in fitted.X_thresholds_),
-            values=tuple(float(y) for y in fitted.y_thresholds_),
+            # Clamped away from the boundaries. Isotonic regression pools
+            # adjacent scores, and any pooled region whose outcomes are all one
+            # class yields a knot of exactly 0.0 or 1.0 - on this model that was
+            # 43% of applications receiving a stated 0% probability of default.
+            # No statistical model licenses certainty, an audit record asserting
+            # it is indefensible to a reviewer, and log-odds of 0 or 1 are not
+            # finite. Clamping is applied here rather than at prediction time so
+            # the stored calibrator.json is itself honest and inspectable.
+            values=tuple(
+                min(max(float(y), PROBABILITY_EPSILON), 1.0 - PROBABILITY_EPSILON)
+                for y in fitted.y_thresholds_
+            ),
         )
 
     def predict(self, raw_scores: np.ndarray) -> np.ndarray:

@@ -18,7 +18,7 @@ import pandera.pandas as pa
 from pandera.errors import SchemaError, SchemaErrors
 
 from aae.domain.errors import DataValidationError
-from aae.ml.features import ID_COLUMN, TARGET_COLUMN
+from aae.ml.features import ID_COLUMN, PROTECTED_ATTRIBUTES, TARGET_COLUMN
 
 VALID_GENDERS: Final[tuple[str, ...]] = ("F", "M", "XNA")
 """``XNA`` appears in the real dataset and must not crash validation."""
@@ -86,6 +86,46 @@ APPLICATION_SCHEMA: Final[pa.DataFrameSchema] = pa.DataFrameSchema(
     coerce=True,
     name="home_credit_application",
 )
+
+
+SCORING_SCHEMA: Final[pa.DataFrameSchema] = APPLICATION_SCHEMA.remove_columns(
+    [TARGET_COLUMN, *sorted(PROTECTED_ATTRIBUTES)]
+)
+"""The schema for a live application being scored.
+
+Two columns sets are dropped relative to training.
+
+``TARGET`` is absent for the obvious reason: whether this applicant will repay
+is the thing being predicted.
+
+The protected attributes are dropped because a scoring request has no business
+requiring them. They are needed to *measure* disparate impact across a
+population, which is done on training and monitoring datasets - not to decide
+one application. Demanding an applicant's sex or marital status in order to
+score them, when neither may lawfully influence the outcome, would be
+indefensible. They are accepted and validated if supplied, and ignored either
+way.
+"""
+
+
+def validate_for_scoring(frame: pd.DataFrame, *, lazy: bool = True) -> pd.DataFrame:
+    """Validate a live application about to be scored.
+
+    Args:
+        frame: One or more applications, without a target column.
+        lazy: Collect every failure before raising.
+
+    Returns:
+        The validated frame, with dtypes coerced.
+
+    Raises:
+        DataValidationError: If validation fails.
+    """
+    try:
+        return SCORING_SCHEMA.validate(frame, lazy=lazy)
+    except (SchemaError, SchemaErrors) as exc:
+        msg = f"Application failed scoring validation:\n{exc}"
+        raise DataValidationError(msg) from exc
 
 
 def validate_applications(frame: pd.DataFrame, *, lazy: bool = True) -> pd.DataFrame:

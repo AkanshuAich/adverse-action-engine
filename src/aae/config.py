@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aae.domain.errors import ConfigurationError
@@ -65,21 +65,37 @@ class Settings(BaseSettings):
     top_k_factors: int = Field(default=5, ge=1, le=20)
     max_repair_attempts: int = Field(default=3, ge=1, le=10)
 
-    @model_validator(mode="after")
-    def _require_key_for_hosted_provider(self) -> Settings:
-        """Fail fast when a hosted provider is selected without its API key."""
-        required: dict[LLMProvider, SecretStr | None] = {
+    def llm_api_key(self) -> SecretStr | None:
+        """Return the API key for the selected provider, checking it exists.
+
+        Deliberately a method rather than a load-time validator. Requiring an
+        LLM credential merely to construct settings would mean the decision
+        API, the migrations, and the training job all refuse to start without
+        one, despite none of them calling a language model. The check belongs
+        where the credential is used, so a missing key fails the notice
+        generation that needs it rather than the service that does not.
+
+        Returns:
+            The key, or ``None`` for the local provider which needs none.
+
+        Raises:
+            ConfigurationError: If a hosted provider is selected without a key.
+        """
+        keys: dict[LLMProvider, SecretStr | None] = {
             LLMProvider.CEREBRAS: self.cerebras_api_key,
             LLMProvider.GROQ: self.groq_api_key,
         }
-        key = required.get(self.llm_provider)
-        if self.llm_provider in required and key is None:
+        if self.llm_provider not in keys:
+            return None
+
+        key = keys[self.llm_provider]
+        if key is None:
             msg = (
                 f"LLM provider {self.llm_provider.value!r} requires "
                 f"AAE_{self.llm_provider.value.upper()}_API_KEY to be set."
             )
             raise ConfigurationError(msg)
-        return self
+        return key
 
 
 @lru_cache(maxsize=1)

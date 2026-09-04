@@ -245,6 +245,50 @@ DEFAULT_CATEGORICAL: Final[tuple[str, ...]] = (
     "FLAG_OWN_REALTY",
 )
 
+FEATURE_DISPLAY_NAMES: Final[dict[str, str]] = {
+    # Monetary
+    "AMT_INCOME_TOTAL": "Total annual income",
+    "AMT_CREDIT": "Loan amount requested",
+    "AMT_ANNUITY": "Annual repayment amount",
+    "AMT_GOODS_PRICE": "Value of the goods being financed",
+    # Tenure
+    "DAYS_EMPLOYED": "Length of current employment",
+    "DAYS_REGISTRATION": "Time since registration details were last updated",
+    "DAYS_ID_PUBLISH": "Time since the identity document was issued",
+    # Bureau scores
+    "EXT_SOURCE_1": "Credit bureau score (first source)",
+    "EXT_SOURCE_2": "Credit bureau score (second source)",
+    "EXT_SOURCE_3": "Credit bureau score (third source)",
+    # Household
+    "CNT_CHILDREN": "Number of children",
+    "CNT_FAM_MEMBERS": "Household size",
+    "REGION_POPULATION_RELATIVE": "Population density of the area of residence",
+    "REGION_RATING_CLIENT": "Regional risk rating",
+    # Derived
+    "CREDIT_INCOME_RATIO": "Loan amount relative to income",
+    "ANNUITY_INCOME_RATIO": "Repayment burden relative to income",
+    "CREDIT_TERM": "Repayment rate relative to loan size",
+    "GOODS_PRICE_GAP": "Loan amount above the value of the goods financed",
+    "INCOME_PER_FAMILY_MEMBER": "Income per household member",
+    # Categorical
+    "NAME_CONTRACT_TYPE": "Type of loan applied for",
+    "NAME_INCOME_TYPE": "Source of income",
+    "NAME_EDUCATION_TYPE": "Highest level of education",
+    "NAME_HOUSING_TYPE": "Housing situation",
+    "OCCUPATION_TYPE": "Occupation",
+    "FLAG_OWN_CAR": "Car ownership",
+    "FLAG_OWN_REALTY": "Property ownership",
+}
+"""Plain-language names for every model input.
+
+These are not developer conveniences: they are the words that appear in a
+denial notice sent to a person. A column name such as ``EXT_SOURCE_2`` is
+meaningless to an applicant and would fail the plain-language expectations
+that adverse action notices are held to. A test asserts every feature has an
+entry, so a new feature cannot reach a customer letter unnamed.
+"""
+
+
 DEFAULT_SPEC: Final[FeatureSpec] = FeatureSpec(
     numeric=DEFAULT_NUMERIC,
     categorical=DEFAULT_CATEGORICAL,

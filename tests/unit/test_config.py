@@ -43,26 +43,44 @@ class TestDefaults:
 
 
 class TestProviderKeyValidation:
-    def test_cerebras_without_key_is_rejected(self):
+    def test_settings_load_without_an_llm_key(self):
+        """Config must not demand a credential the caller may never use.
+
+        The decision API, the migrations, and the training job all call no
+        language model. Refusing to construct settings without an LLM key
+        would stop every one of them from starting.
+        """
+        settings = Settings(
+            _env_file=None, llm_provider=LLMProvider.CEREBRAS, cerebras_api_key=None
+        )
+        assert settings.llm_provider is LLMProvider.CEREBRAS
+
+    def test_cerebras_without_key_fails_at_the_point_of_use(self):
+        settings = Settings(
+            _env_file=None, llm_provider=LLMProvider.CEREBRAS, cerebras_api_key=None
+        )
         with pytest.raises(ConfigurationError, match="CEREBRAS_API_KEY"):
-            Settings(_env_file=None, llm_provider=LLMProvider.CEREBRAS, cerebras_api_key=None)
+            settings.llm_api_key()
 
-    def test_groq_without_key_is_rejected(self):
+    def test_groq_without_key_fails_at_the_point_of_use(self):
+        settings = Settings(_env_file=None, llm_provider=LLMProvider.GROQ, groq_api_key=None)
         with pytest.raises(ConfigurationError, match="GROQ_API_KEY"):
-            Settings(_env_file=None, llm_provider=LLMProvider.GROQ, groq_api_key=None)
+            settings.llm_api_key()
 
-    def test_groq_with_key_is_accepted(self):
+    def test_groq_with_key_returns_it(self):
         settings = Settings(
             _env_file=None,
             llm_provider=LLMProvider.GROQ,
             groq_api_key=SecretStr("gsk-test"),
         )
-        assert settings.llm_provider is LLMProvider.GROQ
+        key = settings.llm_api_key()
+        assert key is not None
+        assert key.get_secret_value() == "gsk-test"
 
     def test_ollama_needs_no_key(self):
         """The local fallback must work with no credentials at all."""
         settings = Settings(_env_file=None, llm_provider=LLMProvider.OLLAMA)
-        assert settings.llm_provider is LLMProvider.OLLAMA
+        assert settings.llm_api_key() is None
 
 
 class TestBounds:
