@@ -46,11 +46,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     database_url: str = Field(
-        default="postgresql+psycopg://aae_app:aae_dev_password@localhost:5432/aae",
+        default="postgresql+psycopg://aae_app:aae_dev_password@localhost:5433/aae",
         description="Application connection. This role cannot UPDATE or DELETE audit records.",
     )
     migration_database_url: str = Field(
-        default="postgresql+psycopg://aae_owner:aae_dev_password@localhost:5432/aae",
+        default="postgresql+psycopg://aae_owner:aae_dev_password@localhost:5433/aae",
         description="Owner connection, used only by Alembic. The application never uses this.",
     )
 

@@ -68,12 +68,40 @@ feature set.
 
 ```bash
 python -m uv venv
-python -m uv pip install -e ".[dev]"
+python -m uv pip install --python .venv/bin/python -e ".[dev]"
 cp .env.example .env
 docker compose --profile core up -d
-python -m uv run alembic upgrade head
-python -m uv run pytest
+.venv/bin/alembic upgrade head
+.venv/bin/python -m pytest
 ```
+
+On Windows the venv scripts live in `.venv/Scripts/` rather than `.venv/bin/`.
+
+Postgres is published on host port **5433**, not 5432. A locally installed
+PostgreSQL service commonly already owns 5432 and would silently win for
+`localhost` connections, producing authentication failures that look like a
+credential problem rather than a port collision.
+
+Compose profiles keep the footprint small enough for a 12 GB machine — bring up
+only what you are working on:
+
+```bash
+docker compose --profile core up -d      # Postgres only
+docker compose --profile api up -d       # + the API
+docker compose --profile console up -d   # + the Streamlit console
+```
+
+### Verifying the audit guarantee
+
+The append-only property is enforced by Postgres, so it can be checked directly:
+
+```bash
+.venv/bin/python -m pytest tests/integration -m integration
+```
+
+Those tests assert that the application role may `INSERT` and `SELECT`, that the
+database rejects `UPDATE`, `DELETE`, and `TRUNCATE`, and that the hash chain
+detects tampering even by a privileged role that can bypass the grants.
 
 ## Status
 

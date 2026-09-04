@@ -18,7 +18,10 @@ services:
       POSTGRES_PASSWORD: aae_dev_password
       POSTGRES_DB: aae
     ports:
-      - "5432:5432"
+      # Host 5433, not 5432: a native PostgreSQL service commonly already
+      # owns 5432 on developer machines, and it would silently win for
+      # localhost connections. Container-internal port is unchanged.
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/10-init.sql:ro

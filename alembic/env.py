@@ -22,7 +22,7 @@ from sqlalchemy import engine_from_config, pool
 from aae.audit.models import Base
 
 MIGRATION_URL_ENV = "AAE_MIGRATION_DATABASE_URL"
-DEFAULT_MIGRATION_URL = "postgresql+psycopg://aae_owner:aae_dev_password@localhost:5432/aae"
+DEFAULT_MIGRATION_URL = "postgresql+psycopg://aae_owner:aae_dev_password@localhost:5433/aae"
 
 config = context.config
 
