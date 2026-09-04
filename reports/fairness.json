@@ -1,0 +1,99 @@
+{
+  "generated_at": "2026-09-04T18:38:13.121185+00:00",
+  "model_version": "xgb-d6907b2a",
+  "applications": 4000,
+  "overall_decline_rate": 0.196,
+  "groups": [
+    {
+      "attribute": "CODE_GENDER",
+      "selection_rates": {
+        "F": 0.2095,
+        "M": 0.1714
+      },
+      "group_sizes": {
+        "F": 2582,
+        "M": 1418
+      },
+      "adverse_impact_ratio": 0.954,
+      "demographic_parity_difference": 0.0382,
+      "equalized_odds_difference": 0.1353,
+      "true_positive_rates": {
+        "F": 0.8436,
+        "M": 0.7083
+      },
+      "false_positive_rates": {
+        "F": 0.1531,
+        "M": 0.1324
+      },
+      "passes_four_fifths": true
+    },
+    {
+      "attribute": "DAYS_BIRTH",
+      "selection_rates": {
+        "25 to 34": 0.0556,
+        "35 to 44": 0.2382,
+        "45 to 54": 0.1839,
+        "55 and over": 0.1963
+      },
+      "group_sizes": {
+        "55 and over": 2684,
+        "45 to 54": 979,
+        "35 to 44": 319,
+        "25 to 34": 18
+      },
+      "adverse_impact_ratio": 0.8066,
+      "demographic_parity_difference": 0.1827,
+      "equalized_odds_difference": 0.8684,
+      "true_positive_rates": {
+        "25 to 34": 0.0,
+        "35 to 44": 0.8684,
+        "45 to 54": 0.75,
+        "55 and over": 0.806
+      },
+      "false_positive_rates": {
+        "25 to 34": 0.0556,
+        "35 to 44": 0.153,
+        "45 to 54": 0.1416,
+        "55 and over": 0.147
+      },
+      "passes_four_fifths": true
+    },
+    {
+      "attribute": "NAME_FAMILY_STATUS",
+      "selection_rates": {
+        "Civil marriage": 0.2381,
+        "Married": 0.1952,
+        "Separated": 0.2014,
+        "Single / not married": 0.1711,
+        "Widow": 0.1887
+      },
+      "group_sizes": {
+        "Married": 2562,
+        "Single / not married": 602,
+        "Civil marriage": 399,
+        "Separated": 278,
+        "Widow": 159
+      },
+      "adverse_impact_ratio": 0.9192,
+      "demographic_parity_difference": 0.067,
+      "equalized_odds_difference": 0.2564,
+      "true_positive_rates": {
+        "Civil marriage": 0.8077,
+        "Married": 0.7895,
+        "Separated": 0.92,
+        "Single / not married": 0.7436,
+        "Widow": 1.0
+      },
+      "false_positive_rates": {
+        "Civil marriage": 0.1984,
+        "Married": 0.1424,
+        "Separated": 0.1304,
+        "Single / not married": 0.1314,
+        "Widow": 0.1457
+      },
+      "passes_four_fifths": true
+    }
+  ],
+  "findings": [],
+  "mitigation_position": "Measured disparity is documented and monitored, not corrected by group.\n\nThe obvious response to an adverse impact ratio below 0.8 is to adjust\nthresholds per group until the rates equalise. That would be unlawful. Setting\na different decision threshold for applicants of one sex is disparate\ntreatment - deciding on a prohibited basis - and it does not stop being so\nbecause the intent was to improve a fairness metric. It would also be plainly\nvisible in the audit log, which records the threshold applied to every\ndecision.\n\nThe lawful responses are to establish that each feature driving the disparity\nis a legitimate, job-related business necessity; to search for a less\ndiscriminatory alternative that meets the same business need; and to document\nboth. Where the disparity flows through a factor such as income - itself\nunequally distributed for reasons outside the lender's control - the model is\nreflecting the disparity rather than creating it. That is a finding to record\nand act on, not a number to adjust away.\n\nThis module therefore reports. Deciding what to do about a finding is a\ndecision for a credit risk and compliance function, made on the record.\n"
+}

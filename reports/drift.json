@@ -1,0 +1,247 @@
+{
+  "generated_at": "2026-09-04T18:38:13.228260+00:00",
+  "model_version": "xgb-d6907b2a",
+  "reference_rows": 4000,
+  "current_rows": 4000,
+  "score_psi": 0.0022,
+  "score_ks": 0.0105,
+  "score_severity": "stable",
+  "requires_attention": false,
+  "drifted_features": [],
+  "features": [
+    {
+      "feature": "EXT_SOURCE_3",
+      "psi": 0.0111,
+      "ks": 0.0239,
+      "severity": "stable",
+      "reference_missing": 0.2122,
+      "current_missing": 0.2052,
+      "missing_rate_shift": -0.007
+    },
+    {
+      "feature": "EXT_SOURCE_1",
+      "psi": 0.0091,
+      "ks": 0.0333,
+      "severity": "stable",
+      "reference_missing": 0.5753,
+      "current_missing": 0.5635,
+      "missing_rate_shift": -0.0118
+    },
+    {
+      "feature": "CREDIT_INCOME_RATIO",
+      "psi": 0.0089,
+      "ks": 0.026,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "CREDIT_TERM",
+      "psi": 0.0085,
+      "ks": 0.0143,
+      "severity": "stable",
+      "reference_missing": 0.0032,
+      "current_missing": 0.003,
+      "missing_rate_shift": -0.0002
+    },
+    {
+      "feature": "EXT_SOURCE_2",
+      "psi": 0.0084,
+      "ks": 0.016,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "AMT_CREDIT",
+      "psi": 0.0069,
+      "ks": 0.0205,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "AMT_GOODS_PRICE",
+      "psi": 0.0058,
+      "ks": 0.0232,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "INCOME_PER_FAMILY_MEMBER",
+      "psi": 0.005,
+      "ks": 0.0168,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "AMT_ANNUITY",
+      "psi": 0.0046,
+      "ks": 0.0157,
+      "severity": "stable",
+      "reference_missing": 0.0032,
+      "current_missing": 0.003,
+      "missing_rate_shift": -0.0002
+    },
+    {
+      "feature": "REGION_POPULATION_RELATIVE",
+      "psi": 0.0043,
+      "ks": 0.0242,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "DAYS_REGISTRATION",
+      "psi": 0.004,
+      "ks": 0.0303,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "DAYS_ID_PUBLISH",
+      "psi": 0.0032,
+      "ks": 0.016,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "ANNUITY_INCOME_RATIO",
+      "psi": 0.0032,
+      "ks": 0.0148,
+      "severity": "stable",
+      "reference_missing": 0.0032,
+      "current_missing": 0.003,
+      "missing_rate_shift": -0.0002
+    },
+    {
+      "feature": "GOODS_PRICE_GAP",
+      "psi": 0.0031,
+      "ks": 0.0225,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "AMT_INCOME_TOTAL",
+      "psi": 0.0018,
+      "ks": 0.0108,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "FLAG_OWN_CAR",
+      "psi": 0.0016,
+      "ks": null,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "DAYS_EMPLOYED",
+      "psi": 0.0015,
+      "ks": 0.0142,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "FLAG_OWN_REALTY",
+      "psi": 0.0013,
+      "ks": null,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "NAME_EDUCATION_TYPE",
+      "psi": 0.0011,
+      "ks": null,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "NAME_INCOME_TYPE",
+      "psi": 0.0009,
+      "ks": null,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "NAME_HOUSING_TYPE",
+      "psi": 0.0005,
+      "ks": null,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "CNT_FAM_MEMBERS",
+      "psi": 0.0003,
+      "ks": 0.005,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "OCCUPATION_TYPE",
+      "psi": 0.0003,
+      "ks": null,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "CNT_CHILDREN",
+      "psi": 0.0001,
+      "ks": 0.0058,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "NAME_CONTRACT_TYPE",
+      "psi": 0.0001,
+      "ks": null,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    },
+    {
+      "feature": "REGION_RATING_CLIENT",
+      "psi": 0.0,
+      "ks": 0.0092,
+      "severity": "stable",
+      "reference_missing": 0.0,
+      "current_missing": 0.0,
+      "missing_rate_shift": 0.0
+    }
+  ]
+}

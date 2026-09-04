@@ -138,6 +138,14 @@ mypy_path = "src:."
 packages = ["aae", "evals"]
 
 [[tool.mypy.overrides]]
+# Streamlit ships no type information, so its decorators erase the types of
+# whatever they wrap and its widgets return Any. Relaxed for the console
+# module alone rather than globally: everything else stays strict.
+module = ["aae.console.app"]
+disallow_untyped_decorators = false
+warn_return_any = false
+
+[[tool.mypy.overrides]]
 module = [
     "shap.*", "xgboost.*", "sklearn.*", "onnxmltools.*", "skl2onnx.*",
     "mlflow.*", "fairlearn.*", "evidently.*", "presidio_analyzer.*",

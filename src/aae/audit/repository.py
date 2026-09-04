@@ -307,6 +307,90 @@ class AuditRepository:
             ).scalar_one_or_none()
             return self._to_record(row) if row is not None else None
 
+    def pending_review(self, limit: int = 50) -> tuple[str, ...]:
+        """Return decisions that have a notice but no human sign-off yet.
+
+        Derived from the chain rather than from a separate queue table. A
+        queue that can disagree with the audit log is a second source of truth
+        about what happened, and the whole point of the log is that there is
+        only one.
+
+        Args:
+            limit: Maximum decisions to return, oldest first.
+
+        Returns:
+            Correlation ids awaiting review.
+        """
+        awaiting = {
+            AuditEventType.NOTICE_VERIFIED.value,
+            AuditEventType.ESCALATED_TO_HUMAN.value,
+        }
+
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(
+                    AuditRecord.decision_id, AuditRecord.event_type, AuditRecord.sequence
+                ).order_by(AuditRecord.sequence)
+            ).all()
+
+        needs_review: dict[str, int] = {}
+        reviewed: set[str] = set()
+        for decision_id, event_type, sequence in rows:
+            if event_type in awaiting:
+                needs_review.setdefault(decision_id, sequence)
+            elif event_type == AuditEventType.HUMAN_REVIEWED.value:
+                reviewed.add(decision_id)
+
+        ordered = sorted(
+            (decision_id for decision_id in needs_review if decision_id not in reviewed),
+            key=lambda decision_id: needs_review[decision_id],
+        )
+        return tuple(ordered[:limit])
+
+    def record_human_review(
+        self,
+        decision_id: str,
+        application_id: str,
+        *,
+        reviewer: str,
+        action: str,
+        note: str | None = None,
+        edited_body: str | None = None,
+    ) -> ChainedRecord:
+        """Record an underwriter's decision on a generated notice.
+
+        The reviewer, the action, and any edit are appended to the same chain
+        as the machine steps. A human overriding the system is part of the
+        decision's history, not an annotation beside it.
+
+        Args:
+            decision_id: Which decision was reviewed.
+            application_id: The application concerned.
+            reviewer: Who reviewed it.
+            action: What they did - approved, rejected, or edited.
+            note: Their comment, if any.
+            edited_body: The revised letter, when they changed it.
+
+        Returns:
+            The written record.
+        """
+        payload: dict[str, JsonValue] = {
+            "reviewer": reviewer,
+            "action": action,
+            "reviewed_at": datetime.now(UTC).isoformat(),
+            "edited": edited_body is not None,
+        }
+        if edited_body is not None:
+            payload["edited_body"] = edited_body
+
+        return self.append(
+            event_type=AuditEventType.HUMAN_REVIEWED,
+            application_id=application_id,
+            decision_id=decision_id,
+            payload=payload,
+            note=note,
+        )
+
     def new_decision_id(self) -> str:
         """Generate a correlation id for a new decision.
 

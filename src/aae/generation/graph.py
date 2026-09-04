@@ -154,6 +154,22 @@ class GenerationOutcome:
             "model": self.model,
             "passed_verification": self.result.passed if self.result else False,
             "violations": list(self.result.rendered_violations()) if self.result else [],
+            # The notice itself, not merely a hash of it. The chain has to be
+            # sufficient to reconstruct a decision years later, and "what was
+            # actually said to the applicant" is the part they will ask about.
+            "reasons": [
+                {"factor_id": reason.factor_id, "text": reason.text}
+                for reason in (self.notice.principal_reasons if self.notice else ())
+            ],
+            "citations": [
+                {
+                    "document_id": citation.document_id,
+                    "section": citation.section,
+                    "quoted_span": citation.quoted_span,
+                }
+                for citation in (self.notice.citations if self.notice else ())
+            ],
+            "body": self.body,
             "trace": [
                 {
                     "node": step.node,

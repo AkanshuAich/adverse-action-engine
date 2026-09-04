@@ -315,12 +315,76 @@ has, which is whether this change made things worse.
 Groundedness is measured on the **first** attempt, before any repair. Reporting
 the post-repair figure would credit the verifier's work to the model.
 
+## Fairness
+
+Protected attributes never enter the model. That is necessary and nowhere near
+sufficient: a model that has never seen sex can still decline women at a higher
+rate, because the features it does see correlate with the ones it does not.
+Exclusion prevents *disparate treatment*; only measurement detects *disparate
+impact*, and the second is what survives an audit.
+
+Measured on 4,000 applications, adverse impact ratios of 0.95 (sex), 0.81
+(age band) and 0.92 (marital status) — all above the four-fifths screen, with
+group sizes reported alongside, because a ratio computed over eighteen
+applicants is not a finding.
+
+Error rates are measured separately from selection rates. A model can hit
+demographic parity while being far likelier to wrongly decline a creditworthy
+applicant from one group — arguably the worse failure, and invisible to a
+selection-rate check. The equalized odds difference across age bands is 0.87.
+
+**The mitigation position is to document and monitor, not to correct by
+group.** The obvious response to a low ratio is to adjust thresholds per group
+until the rates equalise. That would be unlawful: setting a different decision
+threshold for applicants of one sex is disparate treatment, and it does not
+stop being so because the intent was to improve a fairness metric. It would
+also be plainly visible in the audit log, which records the threshold applied
+to every decision.
+
+## Drift
+
+A credit model does not fail loudly. It keeps returning plausible
+probabilities while the population moves away from the one it was fitted on.
+
+Population Stability Index and Kolmogorov–Smirnov, implemented directly rather
+than imported — the obvious library pulls nltk and its unfixed advisory, and
+PSI is a sum over bins. Bin edges come from reference quantiles, not equal
+width: credit features are heavily skewed, and equal-width bins would put
+nearly every applicant in the first bin and report stability regardless.
+
+Missing-value rates are tracked alongside distributions. A feature that stops
+arriving has drifted even when the values that remain look unchanged, and
+nothing else catches that.
+
+```bash
+python -m aae.ml.reports    # regenerates reports/fairness.json and reports/drift.json
+```
+
+## The review console
+
+```bash
+streamlit run src/aae/console/app.py
+```
+
+Every case is reconstructed from the audit chain — the decision, the factors,
+the notice, and why it escalated. There is no queue table. A queue that could
+disagree with the audit log would be a second source of truth about what
+happened, and the log exists so there is only one. It also means the console
+exercises the claim made to a regulator (that a decision is reconstructable
+from the chain alone) daily, rather than leaving it to be discovered untrue
+during an audit.
+
+Sign-off is appended, never applied over the original. An edited letter and
+the one the system generated both stay in the chain, because what was produced
+and what was sent are different facts and an auditor may want either.
+
 ## Status
 
-Week 6 of 8 complete. Foundation, audit log, data layer, calibrated model,
+Week 7 of 8 complete. Foundation, audit log, data layer, calibrated model,
 per-decision explanations, the decision API, the verifier, generation with a
-bounded repair loop, and a CI-gated evaluation harness.
-Next: fairness analysis, drift monitoring, and the underwriter console.
+bounded repair loop, a CI-gated evaluation harness, fairness and drift
+monitoring, and the underwriter console.
+Next: deployment, the model card, and the validation report.
 
 ## Licence
 
