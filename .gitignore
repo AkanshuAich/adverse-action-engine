@@ -14,10 +14,13 @@ htmlcov/
 *.pem
 *.key
 
-# Data and artifacts - too large for git, reproducible from scripts
-data/
-mlruns/
-artifacts/
+# Data and artifacts - too large for git, reproducible from scripts.
+# Leading slash anchors these to the repository root. Without it, `data/`
+# also matched src/aae/data/ and silently excluded the entire data package
+# from the repository.
+/data/
+/mlruns/
+/artifacts/
 *.onnx
 *.csv
 !evals/golden/*.csv
