@@ -1,0 +1,7 @@
+# Normalise to LF in the repository; CI and containers are Linux.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.onnx binary
+*.xlsx binary

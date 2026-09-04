@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Secrets - never commit
+.env
+*.pem
+*.key
+
+# Data and artifacts - too large for git, reproducible from scripts
+data/
+mlruns/
+artifacts/
+*.onnx
+*.csv
+!evals/golden/*.csv
+
+# Local tooling
+.DS_Store
+.idea/
+.vscode/

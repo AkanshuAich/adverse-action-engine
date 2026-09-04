@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref; the latest push is the one that matters.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  UV_LINK_MODE: copy
+
+jobs:
+  quality:
+    name: Lint, types, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check . --output-format github
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: mypy (strict)
+        run: mypy
+
+      - name: Unit tests with coverage
+        run: |
+          pytest tests/unit \
+            --cov=src/aae \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=80
+
+      - name: Verifier coverage floor
+        # The verifier is the core claim of this project; it is held to a
+        # higher bar than the rest of the codebase.
+        run: |
+          if [ -d src/aae/verification ] && [ -n "$(find src/aae/verification -name '*.py' -not -name '__init__.py' -print -quit)" ]; then
+            pytest tests/unit \
+              --cov=src/aae/verification \
+              --cov-report=term-missing \
+              --cov-fail-under=95
+          else
+            echo "Verifier not implemented yet (week 4); skipping its coverage gate."
+          fi
+
+  integration:
+    name: Integration tests (Testcontainers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Integration tests
+        # Testcontainers starts a real Postgres; the runner provides Docker.
+        run: pytest tests/integration -m integration
+
+  security:
+    name: Security scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks needs history to scan past commits, not just the tip.
+          fetch-depth: 0
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Dependency vulnerability audit
+        run: |
+          uv pip install --system pip-audit
+          uv pip install --system -e "."
+          pip-audit --strict
+
+      - name: Static analysis (Semgrep)
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: p/python r/python.lang.security

@@ -1,0 +1,68 @@
+# Compose profiles keep the footprint small on a 12 GB machine.
+# Bring up only what you are working on:
+#   docker compose --profile core up -d       # Postgres only
+#   docker compose --profile api up -d        # Postgres + API
+#   docker compose --profile console up -d    # Postgres + API + Streamlit
+name: adverse-action-engine
+
+services:
+  postgres:
+    # pgvector ships the extension preinstalled; pinned to the pg16 line.
+    image: pgvector/pgvector:pg16
+    profiles: ["core", "api", "console", "eval"]
+    environment:
+      # aae_owner owns the schema and runs migrations. The application connects
+      # as aae_app, which the migration deliberately denies UPDATE and DELETE on
+      # the audit table. Local development credentials only - never reused.
+      POSTGRES_USER: aae_owner
+      POSTGRES_PASSWORD: aae_dev_password
+      POSTGRES_DB: aae
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aae_owner -d aae"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 1g
+    shm_size: 256m
+
+  api:
+    build:
+      context: .
+      target: api
+    profiles: ["api", "console"]
+    environment:
+      AAE_DATABASE_URL: postgresql+psycopg://aae_app:aae_dev_password@postgres:5432/aae
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 1g
+
+  console:
+    build:
+      context: .
+      target: console
+    profiles: ["console"]
+    environment:
+      AAE_DATABASE_URL: postgresql+psycopg://aae_app:aae_dev_password@postgres:5432/aae
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8501:8501"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 1g
+
+volumes:
+  pgdata:
