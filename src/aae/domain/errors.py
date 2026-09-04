@@ -61,5 +61,17 @@ class VerificationFailedError(AAEError):
         self.violations = violations
 
 
+class VerificationPreconditionError(AAEError):
+    """A notice could not be verified because it does not belong to the decision.
+
+    Distinct from a violation. Violations describe ways a notice is wrong that
+    a regeneration attempt could plausibly fix - an invented factor, a
+    misquoted provision, one reason too many. A precondition failure means the
+    notice is about a different applicant, a different jurisdiction, or an
+    application that was approved. No amount of rewriting fixes that, and
+    feeding it back into a repair loop would burn attempts on a bug.
+    """
+
+
 class AuditIntegrityError(AAEError):
     """The audit log hash chain is broken or a record could not be written."""

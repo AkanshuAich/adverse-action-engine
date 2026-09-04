@@ -165,11 +165,48 @@ Extending a hash chain means reading the tail, so concurrent writers would
 otherwise fork it, and a forked chain is not evidence of anything. A test runs
 twenty threads at once and verifies the result is a single unbroken chain.
 
+## What the verifier does and does not claim
+
+It claims that every assertion in a notice agrees with evidence the system
+already holds: the feature values that were scored, the SHAP attributions that
+explain the score, the corpus text a citation quotes, and the regulator's
+requirements. That evidence exists independently of the generator, so the check
+is deterministic and repeatable and its result means something.
+
+It does not claim the notice is well written or persuasive. Those are real
+qualities and are not verifiable this way. A language model scoring them is
+scoring taste, and reporting that as a groundedness figure would be worse than
+not measuring it.
+
+Failures are separated into two kinds. A **violation** is a way the notice is
+wrong that regeneration could fix, and is fed back into the repair prompt. A
+**precondition failure** — wrong applicant, wrong jurisdiction, an application
+that was approved — raises instead, because rewriting cannot fix a bug and
+retrying would only burn attempts.
+
+Notices in the test suite are hand-written, including deliberately fabricated
+ones. A verifier tested only against real model output is tested only against
+the mistakes that model happens to make, and the ones that matter are the
+mistakes it makes rarely. Property tests then assert the stronger claim: no
+notice citing a factor absent from the decision can pass, whatever it says.
+
+## Jurisdictions
+
+Requirements are pluggable. `india_rbi` encodes the RBI Fair Practices Code
+obligation to convey reasons for rejection in writing, plus the disclosed
+grievance redressal route. US Regulation B follows the same interface.
+
+Required elements carry a predicate wherever the structured notice can be
+checked directly, rather than trusting the model's own declaration that it
+complied. A model asserting "yes, I included the reasons" is not evidence that
+it did — there is a test that declares every element while supplying none.
+
 ## Status
 
-Week 3 of 8 complete. Foundation, audit log, data layer, calibrated model,
-per-decision explanations, and the decision API.
-Next: the verifier.
+Week 4 of 8 complete. Foundation, audit log, data layer, calibrated model,
+per-decision explanations, the decision API, and the verifier.
+Next: retrieval and generation — the first point at which a language model is
+involved at all.
 
 ## Licence
 
