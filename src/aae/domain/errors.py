@@ -21,6 +21,16 @@ class ModelError(AAEError):
     """A model artifact could not be loaded, or scoring failed."""
 
 
+class FairLendingViolationError(AAEError):
+    """A protected attribute was about to influence a credit decision.
+
+    Raised at feature-specification time rather than at scoring time, so the
+    failure happens while building the model rather than while denying someone
+    credit. Covers both direct use of a protected column and proxy use through
+    a derived feature that depends on one.
+    """
+
+
 class RetrievalError(AAEError):
     """The regulation corpus could not be searched."""
 

@@ -103,9 +103,36 @@ Those tests assert that the application role may `INSERT` and `SELECT`, that the
 database rejects `UPDATE`, `DELETE`, and `TRUNCATE`, and that the hash chain
 detects tampering even by a privileged role that can bypass the grants.
 
+## Data
+
+The real Home Credit extract is used when `data/application_train.csv` is
+present. Otherwise a synthetic generator produces a frame with the same
+columns, dtypes, missingness, and statistical structure, so tests, CI, and a
+fresh clone all work without a Kaggle account. Provenance travels with the
+data and is recorded on the model, because "trained on synthetic data" is a
+material fact about a credit model.
+
+## Model
+
+XGBoost with native categorical support, so SHAP attributions name real
+category levels rather than one-hot indices — a denial reason has to be
+readable by the person receiving it.
+
+Calibration is **guarded**: isotonic regression is fitted on part of the
+calibration split, judged on the rest, and kept only if it measurably improves
+expected calibration error. Otherwise the model ships with an identity mapping.
+Fitting isotonic unconditionally degrades calibration as often as it helps —
+measured here, it hurt at 2,400 calibration rows and helped at 4,800. The
+guarantee is that calibration never makes a quoted probability worse.
+
+`scale_pos_weight` is deliberately unused. It lifts ranking metrics on an 8%
+positive rate and destroys calibration by construction, and a denial rests on a
+probability threshold, not a ranking.
+
 ## Status
 
-Under construction. Week 1 of 8: foundation, tooling, CI, audit schema.
+Week 2 of 8 complete. Foundation, audit log, data layer, and calibrated model.
+Next: SHAP explainability and decision recording.
 
 ## Licence
 
