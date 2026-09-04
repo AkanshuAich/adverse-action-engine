@@ -159,3 +159,46 @@ class HealthResponse(BaseModel):
     threshold: float
     audit_records: int
     chain_intact: bool
+
+
+class NoticeReasonResponse(BaseModel):
+    """One principal reason as it appears in the notice."""
+
+    factor_id: str
+    text: str
+
+
+class NoticeCitationResponse(BaseModel):
+    """One regulatory citation, verified against the corpus."""
+
+    document_id: str
+    section: str
+    quoted_span: str
+
+
+class NoticeResponse(BaseModel):
+    """The outcome of generating an adverse action notice."""
+
+    decision_id: str
+    application_id: str
+    probability_default: float = Field(ge=0, le=1)
+    issued: bool = Field(description="Whether the notice may be sent without human intervention.")
+    escalated: bool
+    escalation_reason: str | None = None
+    attempts: int = Field(ge=1, description="Generation attempts made before this outcome.")
+    provider: str
+    model: str
+    body: str | None = Field(
+        default=None,
+        description="The customer-facing letter. Absent when escalated: nothing "
+        "may be sent whose content could not be verified.",
+    )
+    reasons: tuple[NoticeReasonResponse, ...] = ()
+    citations: tuple[NoticeCitationResponse, ...] = ()
+    violations: tuple[str, ...] = Field(
+        default=(),
+        description="Why verification failed, when it did.",
+    )
+    audit_sequences: tuple[int, ...] = Field(
+        description="Positions in the audit chain of the records written."
+    )

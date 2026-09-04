@@ -14,8 +14,14 @@ from typing import TYPE_CHECKING, Annotated
 
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.responses import JSONResponse
 
-from aae.api.deps import get_audit_repository, get_decision_engine
+from aae.api.deps import (
+    get_audit_repository,
+    get_corpus,
+    get_decision_engine,
+    get_notice_generator,
+)
 from aae.api.schemas import (
     ApplicationRequest,
     AuditRecordResponse,
@@ -23,17 +29,30 @@ from aae.api.schemas import (
     ChainVerificationResponse,
     DecisionResponse,
     HealthResponse,
+    NoticeCitationResponse,
+    NoticeReasonResponse,
+    NoticeResponse,
 )
 from aae.audit.models import AuditEventType
+from aae.audit.repository import decision_payload
 from aae.config import get_settings
 from aae.data.schema import validate_for_scoring
-from aae.domain.errors import AuditIntegrityError, DataValidationError
+from aae.domain.errors import (
+    AuditIntegrityError,
+    ConfigurationError,
+    DataValidationError,
+    GenerationError,
+)
+from aae.domain.models import Decision
+from aae.generation.payload import build_payload
+from aae.jurisdiction.india_rbi import INDIA_RBI
 from aae.logging import bind_correlation_id, configure_logging, get_logger
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from aae.audit.repository import AuditRepository
+    from aae.generation.graph import NoticeGenerator
     from aae.ml.decision import DecisionEngine
 
 logger = get_logger(__name__)
@@ -63,6 +82,7 @@ app = FastAPI(
 
 EngineDep = Annotated["DecisionEngine", Depends(get_decision_engine)]
 AuditDep = Annotated["AuditRepository", Depends(get_audit_repository)]
+GeneratorDep = Annotated["NoticeGenerator", Depends(get_notice_generator)]
 
 
 @app.get("/health", response_model=HealthResponse, tags=["operations"])
@@ -136,6 +156,150 @@ def create_decision(
         ) from exc
 
     return DecisionResponse.from_decision(decision, decision_id, record.sequence)
+
+
+@app.post(
+    "/v1/notices",
+    response_model=NoticeResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["notices"],
+)
+def create_notice(
+    application: ApplicationRequest,
+    engine: EngineDep,
+    audit: AuditDep,
+    generator: GeneratorDep,
+) -> NoticeResponse:
+    """Score an application and, if declined, produce a verified notice.
+
+    The decision and the notice are written to the audit chain in one
+    transaction. A decision recorded without its notice, or a notice without
+    the decision it explains, is a partial chain: it looks like evidence and
+    is not.
+
+    Args:
+        application: The application to decide.
+        engine: The decision engine.
+        audit: The audit repository.
+        generator: The notice generator.
+
+    Returns:
+        The notice, or the reason it was escalated to a human.
+
+    Raises:
+        HTTPException: 422 on invalid input, 409 if the application was
+            approved and there is no adverse action to explain, 502 if the
+            language model could not be reached, 500 if the audit write fails.
+    """
+    decision_id = audit.new_decision_id()
+    bind_correlation_id(decision_id)
+
+    frame = pd.DataFrame([application.model_dump()])
+    try:
+        validated = validate_for_scoring(frame)
+    except DataValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    decision = engine.decide(validated)
+
+    if decision.decision is not Decision.DECLINE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This application was approved. An adverse action notice explains "
+                "a decline; there is nothing here to explain."
+            ),
+        )
+
+    try:
+        payload = build_payload(decision, INDIA_RBI, list(get_corpus()))
+        outcome = generator.generate(decision, payload)
+    except GenerationError as exc:
+        # An unreachable backend is an operational failure, not an unverifiable
+        # notice. Reporting it as an escalation would inflate the metric people
+        # rely on to notice the model getting worse.
+        logger.error("notice_generation_failed", decision_id=decision_id, error=str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    event = (
+        AuditEventType.ESCALATED_TO_HUMAN if outcome.escalated else AuditEventType.NOTICE_VERIFIED
+    )
+    try:
+        records = audit.append_many(
+            [
+                (
+                    AuditEventType.DECISION_SCORED,
+                    decision.application_id,
+                    decision_id,
+                    decision_payload(decision),
+                    None,
+                ),
+                (
+                    event,
+                    decision.application_id,
+                    decision_id,
+                    outcome.audit_payload(),
+                    None,
+                ),
+            ]
+        )
+    except AuditIntegrityError as exc:
+        logger.error("audit_write_failed", decision_id=decision_id, error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The notice was not recorded and has therefore not been issued.",
+        ) from exc
+
+    notice = outcome.notice
+    return NoticeResponse(
+        decision_id=decision_id,
+        application_id=decision.application_id,
+        probability_default=decision.probability_default,
+        issued=outcome.issued,
+        escalated=outcome.escalated,
+        escalation_reason=outcome.escalation_reason,
+        attempts=outcome.attempts,
+        provider=outcome.provider,
+        model=outcome.model,
+        body=outcome.body,
+        reasons=tuple(
+            NoticeReasonResponse(factor_id=reason.factor_id, text=reason.text)
+            for reason in (notice.principal_reasons if notice else ())
+        ),
+        citations=tuple(
+            NoticeCitationResponse(
+                document_id=citation.document_id,
+                section=citation.section,
+                quoted_span=citation.quoted_span,
+            )
+            for citation in (notice.citations if notice else ())
+        ),
+        violations=tuple(outcome.result.rendered_violations()) if outcome.result else (),
+        audit_sequences=tuple(record.sequence for record in records),
+    )
+
+
+@app.exception_handler(ConfigurationError)
+def configuration_error_handler(_: object, exc: ConfigurationError) -> JSONResponse:
+    """Report a missing credential as unavailable, not as a server fault.
+
+    The scoring endpoints work without a language model. Only notice
+    generation needs one, and a deployment that has not configured it is
+    misconfigured rather than broken.
+
+    Args:
+        _: The request, unused.
+        exc: The configuration failure.
+
+    Returns:
+        A 503 naming what is missing.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": f"Notice generation is not configured: {exc}"},
+    )
 
 
 @app.get(

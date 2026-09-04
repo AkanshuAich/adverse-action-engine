@@ -39,9 +39,15 @@ ai = [
     "langgraph>=0.2.50",
     "langchain-core>=0.3.20",
     "fastembed>=0.4",
-    "presidio-analyzer>=2.2",
-    "presidio-anonymizer>=2.2",
     "textstat>=0.7",
+    # Presidio is deliberately absent. It detects PII in free text, and this
+    # payload contains none: the prompt is assembled from an allowlist of
+    # named features and their numeric values, so nothing unlisted can reach a
+    # provider in the first place. An allowlist is a stronger guarantee than
+    # detection for structured data, and Presidio's spaCy model is several
+    # hundred megabytes. Add it the moment a free-text field enters the
+    # payload - an applicant's written statement, say - because then detection
+    # becomes the only option.
 ]
 console = [
     "streamlit>=1.40",

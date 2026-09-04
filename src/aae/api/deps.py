@@ -18,10 +18,15 @@ from typing import TYPE_CHECKING, Final
 from aae.audit.repository import AuditRepository
 from aae.audit.session import create_database_engine, create_session_factory
 from aae.config import get_settings
+from aae.generation.graph import NoticeGenerator
+from aae.generation.providers.registry import build_provider
+from aae.jurisdiction.india_rbi import INDIA_RBI
 from aae.logging import get_logger
 from aae.ml.decision import DecisionEngine
 from aae.ml.registry import load_model, save_model
 from aae.ml.train import TrainedModel, train_model
+from aae.retrieval.corpus import InMemoryCorpus, india_rbi_corpus
+from aae.verification.verifier import NoticeVerifier
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
@@ -96,6 +101,54 @@ def get_decision_engine() -> DecisionEngine:
     )
 
 
+@lru_cache(maxsize=1)
+def get_corpus() -> InMemoryCorpus:
+    """Return the regulation corpus used for citation checking.
+
+    Held in memory rather than read from the vector store. Citation checking
+    is an exact lookup of a handful of provisions on every verification, and a
+    round trip to Postgres for each buys nothing. The pgvector store exists for
+    the other job - finding *which* provision applies once the corpus is a
+    full Master Direction rather than four paragraphs.
+
+    Returns:
+        The corpus of provisions for the configured jurisdiction.
+    """
+    return india_rbi_corpus()
+
+
+@lru_cache(maxsize=1)
+def get_verifier() -> NoticeVerifier:
+    """Return the notice verifier.
+
+    Returns:
+        A verifier for the configured jurisdiction.
+    """
+    return NoticeVerifier(INDIA_RBI, get_corpus())
+
+
+@lru_cache(maxsize=1)
+def get_notice_generator() -> NoticeGenerator:
+    """Return the notice generator.
+
+    Constructing the provider is where a missing LLM credential surfaces. That
+    is deliberate: the scoring API must start without one, and only the
+    endpoint that actually calls a model should fail for the want of a key.
+
+    Returns:
+        A generator wired to the configured provider and verifier.
+
+    Raises:
+        ConfigurationError: If a hosted provider is selected without its key.
+    """
+    settings = get_settings()
+    return NoticeGenerator(
+        provider=build_provider(settings),
+        verifier=get_verifier(),
+        max_attempts=settings.max_repair_attempts,
+    )
+
+
 def reset_caches() -> None:
     """Clear every cached provider.
 
@@ -105,3 +158,6 @@ def reset_caches() -> None:
     get_audit_repository.cache_clear()
     get_model.cache_clear()
     get_decision_engine.cache_clear()
+    get_corpus.cache_clear()
+    get_verifier.cache_clear()
+    get_notice_generator.cache_clear()

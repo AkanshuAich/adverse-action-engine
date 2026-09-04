@@ -201,12 +201,76 @@ checked directly, rather than trusting the model's own declaration that it
 complied. A model asserting "yes, I included the reasons" is not evidence that
 it did — there is a test that declares every element while supplying none.
 
+## Generation
+
+Two stages, for one reason.
+
+**Select** returns a typed object — which factors are the principal reasons,
+what is claimed, which provisions are cited — every field of which is checkable
+against evidence the system already holds. **Render** turns the *verified*
+selection into prose and is shown nothing it could get wrong about the record:
+not the identifier, not the feature values, only the sentences that already
+passed. Prose is where a model invents; the less it is given, the less there is
+to invent about.
+
+The model never sees the applicant identifier. It returns reasons and
+citations; identity is attached afterwards from the decision. A model that
+never sees an id cannot attribute a notice to the wrong person, so that failure
+becomes structurally impossible to cause by generation rather than merely
+detectable.
+
+Rejected attempts are repaired by feeding the verifier's own violation text
+back, unaltered — paraphrasing them loses the locator saying which reason was
+wrong. Repair is bounded at three attempts, and exhausting it escalates to a
+human with the violations attached. **A provider failure is not an
+escalation**: an unreachable backend is an operational problem, and folding it
+into the escalation rate would make a network outage look like the model
+getting worse.
+
+## What reaches a language model
+
+An allowlist, not a redactor. A redactor inspects a payload and removes what it
+recognises, so anything it fails to recognise is disclosed. Here the payload is
+*built* from a fixed set of permitted fields, so a value can only reach a
+provider by being named.
+
+Protected attributes are excluded twice over. Favourable factors are withheld
+too — a model given them will eventually offer one as a reason for declining,
+and not presenting the temptation is cheaper than repairing it.
+
+Presidio is deliberately absent: it detects PII in free text, and this payload
+has none. It becomes necessary the moment an applicant-supplied string enters
+the payload.
+
+## Providers
+
+Cerebras, Groq, and a local Ollama all speak the OpenAI chat-completions
+protocol, so there is one adapter parameterised by URL, model, and credential
+rather than three SDKs. Free tiers moved materially during 2026, which is the
+practical argument for the abstraction. Structured output is requested as JSON
+and then *validated* — a model returning prose or a plausible object with the
+wrong fields is routine, not exceptional, and must fail as a provider error
+rather than flow onward as a half-populated notice.
+
+## Retrieval
+
+The corpus serves two different jobs. **Lookup** resolves a citation to the
+exact text it claims to quote, which is what makes a fabricated regulation
+detectable. **Search** finds which provisions apply. Vectors are stored with
+the name of the embedder that produced them, and a mismatch is refused rather
+than answered: vectors from different models are not comparable, and searching
+across them returns confident nonsense.
+
+Tests use a deterministic hashing embedder rather than downloading a model. A
+build that fails because a model host was slow has told you nothing about the
+code.
+
 ## Status
 
-Week 4 of 8 complete. Foundation, audit log, data layer, calibrated model,
-per-decision explanations, the decision API, and the verifier.
-Next: retrieval and generation — the first point at which a language model is
-involved at all.
+Week 5 of 8 complete. Foundation, audit log, data layer, calibrated model,
+per-decision explanations, the decision API, the verifier, and generation with
+a bounded repair loop.
+Next: the evaluation harness — turning "it works" into a measured number.
 
 ## Licence
 
