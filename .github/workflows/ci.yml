@@ -28,39 +28,44 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          # Without this the cache key matches nothing and never invalidates.
+          cache-dependency-glob: "pyproject.toml"
 
-      - name: Set up Python
-        run: uv python install 3.12
+      - name: Create the environment
+        # An explicit venv rather than `--system`: `uv python install` provisions
+        # a managed interpreter that `uv pip install --system` does not resolve
+        # to, which failed the install outright. `uv venv` plus `uv run` pins
+        # exactly one environment for every subsequent step.
+        run: uv venv --python 3.12
 
       - name: Install dependencies
-        # ml extras are required here, not optional: mypy type-checks
+        # The ml extras are required, not optional: mypy type-checks
         # src/aae/ml and src/aae/data, and the unit tests exercise the model
         # pipeline. Installing only [dev] fails at import.
-        run: uv pip install --system -e ".[dev,ml]"
+        run: uv pip install -e ".[dev,ml]"
 
       - name: Ruff lint
-        run: ruff check . --output-format github
+        run: uv run ruff check . --output-format github
 
       - name: Ruff format check
-        run: ruff format --check .
+        run: uv run ruff format --check .
 
       - name: mypy (strict)
-        run: mypy
+        run: uv run mypy
 
       - name: Unit tests with coverage
         run: |
-          pytest tests/unit \
+          uv run pytest tests/unit \
             --cov=src/aae \
             --cov-report=term-missing \
-            --cov-report=xml \
             --cov-fail-under=80
 
       - name: Verifier coverage floor
-        # The verifier is the core claim of this project; it is held to a
-        # higher bar than the rest of the codebase.
+        # The verifier is the core claim of this project, so it is held to a
+        # higher bar than the rest of the codebase. Skipped until it exists.
         run: |
-          if [ -d src/aae/verification ] && [ -n "$(find src/aae/verification -name '*.py' -not -name '__init__.py' -print -quit)" ]; then
-            pytest tests/unit \
+          if [ -n "$(find src/aae/verification -name '*.py' -not -name '__init__.py' -print -quit)" ]; then
+            uv run pytest tests/unit \
               --cov=src/aae/verification \
               --cov-report=term-missing \
               --cov-fail-under=95
@@ -78,16 +83,17 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
 
-      - name: Set up Python
-        run: uv python install 3.12
+      - name: Create the environment
+        run: uv venv --python 3.12
 
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+        run: uv pip install -e ".[dev]"
 
       - name: Integration tests
         # Testcontainers starts a real Postgres; the runner provides Docker.
-        run: pytest tests/integration -m integration
+        run: uv run pytest tests/integration -m integration
 
   security:
     name: Security scans
@@ -95,7 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # gitleaks needs history to scan past commits, not just the tip.
+          # gitleaks scans history, not just the tip.
           fetch-depth: 0
 
       - name: Secret scan
@@ -105,15 +111,17 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
 
-      - name: Set up Python
-        run: uv python install 3.12
+      - name: Create the environment
+        run: uv venv --python 3.12
 
       - name: Dependency vulnerability audit
         run: |
-          uv pip install --system pip-audit
-          uv pip install --system -e "."
-          pip-audit --strict
+          uv pip install -e "." pip-audit
+          uv run pip-audit --strict
 
       - name: Static analysis (Semgrep)
         uses: semgrep/semgrep-action@v1
