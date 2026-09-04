@@ -29,7 +29,11 @@ ml = [
     "mlflow>=2.18",
     "pandera>=0.21",
     "fairlearn>=0.11",
-    "evidently>=0.4.40",
+    # evidently (drift monitoring, week 7) is deliberately not here yet.
+    # It pulls nltk transitively, which currently carries PYSEC-2026-3740
+    # with no fix released. Carrying a vulnerable dependency five weeks
+    # before it is used buys nothing, so it is added when week 7 needs it
+    # and the advisory is re-checked then.
 ]
 ai = [
     "langgraph>=0.2.50",

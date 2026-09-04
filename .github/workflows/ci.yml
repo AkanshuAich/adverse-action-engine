@@ -119,9 +119,16 @@ jobs:
         run: uv venv --python 3.12
 
       - name: Dependency vulnerability audit
+        # Audits the declared dependency set, not the installed environment.
+        # `pip-audit --strict` fails on any distribution it cannot resolve on
+        # PyPI, and this project is installed editable and unpublished, so
+        # auditing the environment always failed on our own package rather
+        # than on a real finding. `--skip-editable` does not help: strict mode
+        # treats a skipped package as a failure too.
         run: |
-          uv pip install -e "." pip-audit
-          uv run pip-audit --strict
+          uv pip compile pyproject.toml --extra dev --extra ml -o /tmp/requirements.txt
+          uv pip install pip-audit
+          uv run pip-audit -r /tmp/requirements.txt --strict
 
       - name: Static analysis (Semgrep)
         uses: semgrep/semgrep-action@v1

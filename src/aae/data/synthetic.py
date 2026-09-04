@@ -193,9 +193,9 @@ def generate_applications(
         - 0.55 * (log_income - log_income.mean())
         + rng.normal(0.0, 0.8, size=n_rows)
     )
-    target = (rng.random(n_rows) < _sigmoid(_solve_intercept(risk, BASE_DEFAULT_RATE) + risk)).astype(
-        np.int8
-    )
+    target = (
+        rng.random(n_rows) < _sigmoid(_solve_intercept(risk, BASE_DEFAULT_RATE) + risk)
+    ).astype(np.int8)
 
     frame = pd.DataFrame(
         {
@@ -231,7 +231,9 @@ def generate_applications(
             "NAME_EDUCATION_TYPE": rng.choice(
                 _EDUCATION_TYPES, size=n_rows, p=[0.71, 0.24, 0.034, 0.016]
             ),
-            "NAME_HOUSING_TYPE": rng.choice(_HOUSING_TYPES, size=n_rows, p=[0.89, 0.05, 0.04, 0.02]),
+            "NAME_HOUSING_TYPE": rng.choice(
+                _HOUSING_TYPES, size=n_rows, p=[0.89, 0.05, 0.04, 0.02]
+            ),
             "OCCUPATION_TYPE": rng.choice(_OCCUPATIONS, size=n_rows),
             "FLAG_OWN_CAR": rng.choice(["Y", "N"], size=n_rows, p=[0.34, 0.66]),
             "FLAG_OWN_REALTY": rng.choice(["Y", "N"], size=n_rows, p=[0.69, 0.31]),

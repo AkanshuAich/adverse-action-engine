@@ -13,13 +13,12 @@ from __future__ import annotations
 
 from typing import Final
 
+import pandas as pd
 import pandera.pandas as pa
 from pandera.errors import SchemaError, SchemaErrors
 
 from aae.domain.errors import DataValidationError
 from aae.ml.features import ID_COLUMN, TARGET_COLUMN
-
-import pandas as pd  # noqa: E402 - imported after pandera to keep the boundary obvious
 
 VALID_GENDERS: Final[tuple[str, ...]] = ("F", "M", "XNA")
 """``XNA`` appears in the real dataset and must not crash validation."""
