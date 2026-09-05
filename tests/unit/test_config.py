@@ -116,3 +116,42 @@ class TestGetSettings:
             assert get_settings() is get_settings()
         finally:
             get_settings.cache_clear()
+
+
+class TestShippedSampleMatchesShippedDefault:
+    """The sample and the default threshold must agree.
+
+    `samples/decline.json` is used in the deployment instructions and named
+    for what it is supposed to do. It was silently approved for a while,
+    because the API defaulted to 0.5 while the golden set that produced the
+    sample was built at 0.15. This ties them together so they cannot diverge
+    again without a test failing.
+    """
+
+    def test_the_default_threshold_matches_the_evaluation_harness(self):
+        settings = _settings()
+        assert settings.decision_threshold == 0.15
+
+    def test_the_shipped_sample_declines_at_the_default_threshold(self):
+        import json
+        from pathlib import Path
+
+        import pandas as pd
+
+        from aae.data.loaders import load_applications
+        from aae.data.schema import validate_for_scoring
+        from aae.domain.models import Decision
+        from aae.ml.decision import DecisionEngine
+        from aae.ml.train import train_model
+
+        sample = Path("samples/decline.json")
+        if not sample.is_file():
+            pytest.skip("sample not present")
+
+        payload = json.loads(sample.read_text(encoding="utf-8"))
+        frame = validate_for_scoring(pd.DataFrame([payload]))
+
+        model = train_model(load_applications(force_synthetic=True, n_synthetic=20_000))
+        engine = DecisionEngine(model, threshold=_settings().decision_threshold)
+
+        assert engine.decide(frame).decision is Decision.DECLINE

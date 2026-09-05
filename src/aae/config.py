@@ -62,7 +62,22 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
 
     jurisdiction: str = "india_rbi"
-    decision_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    decision_threshold: float = Field(
+        default=0.15,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Probability of default at or above which credit is declined. "
+            "Not 0.5: that is the naive classification cut, and it is wrong "
+            "for an imbalanced target. Measured on this model, a 0.5 threshold "
+            "declines 2.7% of applicants against an 8.3% default rate, so it "
+            "approves a great many people who will not repay. It also means "
+            "the notice pipeline almost never fires, which would make a system "
+            "built to explain declines produce almost none. The evaluation "
+            "harness, the golden set and the monitoring reports all use 0.15; "
+            "this is the value that makes them agree."
+        ),
+    )
     top_k_factors: int = Field(default=5, ge=1, le=20)
     max_repair_attempts: int = Field(default=3, ge=1, le=10)
 
