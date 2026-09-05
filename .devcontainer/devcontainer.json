@@ -1,7 +1,9 @@
 {
-  "name": "Python 3",
-  // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+  "name": "Adverse Action Engine",
+  // 3.12, not the 3.11 the Streamlit template ships. The package uses a PEP 695
+  // `type` statement, which is a syntax error before 3.12, and pyproject.toml
+  // declares requires-python = ">=3.12".
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
   "customizations": {
     "codespaces": {
       "openFiles": [
@@ -13,17 +15,21 @@
       "settings": {},
       "extensions": [
         "ms-python.python",
-        "ms-python.vscode-pylance"
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff"
       ]
     }
   },
-  "updateContentCommand": "[ -f packages.txt ] && sudo apt update && sudo apt upgrade -y && sudo xargs apt install -y <packages.txt; [ -f requirements.txt ] && pip3 install --user -r requirements.txt; pip3 install --user streamlit; echo '✅ Packages installed and Requirements met'",
+  // The template looked for a root requirements.txt, which this project does
+  // not have and should not: dependencies live in pyproject.toml. Without this
+  // the Codespace installed streamlit alone and the app failed on `import aae`.
+  "updateContentCommand": "pip3 install --user -e '.[console,dev]' && echo 'Package installed in editable mode.'",
   "postAttachCommand": {
     "server": "streamlit run deploy/streamlit/app.py --server.enableCORS false --server.enableXsrfProtection false"
   },
   "portsAttributes": {
     "8501": {
-      "label": "Application",
+      "label": "Review console",
       "onAutoForward": "openPreview"
     }
   },
