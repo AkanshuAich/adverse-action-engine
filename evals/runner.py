@@ -74,6 +74,13 @@ Observed: a five-case trial run against a live backend lost four cases to a
 rate limit and reported GATE PASSED on the strength of the one that survived.
 """
 
+RATE_LIMIT_RETRIES: Final[int] = 4
+"""How many times a batch call waits out a rate limit before giving up.
+
+Four covers a token bucket that refills every minute even when several cases
+land together. A limit that survives four resets is not a burst.
+"""
+
 REGRESSION_TOLERANCE: Final[float] = 0.03
 """How far a gated metric may fall below baseline before the gate fires.
 
@@ -291,7 +298,12 @@ def build_provider(name: str, profile: str) -> StructuredProvider:
     from aae.generation.providers.registry import build_provider as build_real
 
     settings = get_settings().model_copy(update={"llm_provider": LLMProvider(name)})
-    return build_real(settings)
+    # A batch run should wait out a per-minute limit rather than lose the case
+    # to it. Without this the harness cannot measure a free tier at all: one
+    # run lost 71 of 100 cases, and lost them in fourteen seconds, because a
+    # refused call returns instantly and the throttle between cases never
+    # applies to it.
+    return build_real(settings, rate_limit_retries=RATE_LIMIT_RETRIES)
 
 
 def write_report(

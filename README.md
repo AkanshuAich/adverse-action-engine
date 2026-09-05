@@ -277,11 +277,25 @@ the payload.
 
 Cerebras, Groq, and a local Ollama all speak the OpenAI chat-completions
 protocol, so there is one adapter parameterised by URL, model, and credential
-rather than three SDKs. Free tiers moved materially during 2026, which is the
-practical argument for the abstraction. Structured output is requested as JSON
-and then *validated* — a model returning prose or a plausible object with the
-wrong fields is routine, not exceptional, and must fail as a provider error
-rather than flow onward as a half-populated notice.
+rather than three SDKs.
+
+That abstraction stopped being hypothetical during this project. Cerebras was
+the primary backend; it withdrew its free tier and now answers `402` for every
+model, and the model this project had pinned no longer appears in its catalogue
+at all. Migrating to Groq was two environment variables — nothing in the graph,
+the verifier, the audit chain, or the harness knows which backend answered.
+
+Structured output is **constrained** to the expected schema at the decoder, not
+requested in prose. Asking for `json_object` buys syntactically valid JSON and
+nothing else: against a live backend the model returned a well-formed object
+with invented field names, which is a normal thing for a model to do and not
+something reprompting fixes reliably. The schema now travels with the request.
+Validation still runs on arrival, because a constraint the backend ignores must
+fail as a provider error rather than flow onward as a half-populated notice.
+
+Model names are pinned against a live listing rather than from memory. A
+renamed model returns `404` and a withdrawn free tier returns `402`; from the
+outside both look like the LLM call failed, and neither is a bad credential.
 
 ## Retrieval
 
@@ -324,19 +338,30 @@ measurement rather than an absence of testing.
 **What this measures, and what it does not.** These figures describe how the
 *system* handles a fixed distribution of model mistakes. They are not a claim
 about any real model's quality. Reporting one as the other would be exactly the
-dishonesty this project argues against. Live figures come from running the same
-harness with `--provider cerebras`, which is a manual step because a gate that
-needs a credential and a rate limit cannot run in CI.
+dishonesty this project argues against.
+
+Live figures are a manual step, because a gate that needs a credential and
+obeys a rate limit cannot run in CI. The throttle is not incidental: Groq's
+free tier allows 8,000 tokens per minute, a case costs roughly 3,500, and an
+unthrottled run is abandoned rather than slow.
 
 ```bash
-python -m evals.runner --provider simulated          # the CI gate
-python -m evals.runner --provider cerebras --throttle 2   # live figures
+python -m evals.runner --provider simulated                # the CI gate
+python -m evals.runner --provider groq --throttle 35       # live figures
 ```
 
 ## The gate
 
 CI fails a merge when a gated metric falls more than three points below the
-committed baseline, or when a prohibited reference reaches an issued notice.
+committed baseline, when a prohibited reference reaches an issued notice, or
+when more than a tenth of the run was abandoned before it could be measured.
+
+That last one was added after a live run lost four of its five cases to a rate
+limit and reported **GATE PASSED** on the strength of the survivor. Metrics are
+computed over cases that finish, so an incomplete run flatters itself, and the
+survivors are not a random sample — a token-per-minute limit falls hardest on
+the longest prompts, which are the hard cases. A harness has to gate on whether
+the evaluation happened before it gates on what the evaluation said.
 
 The baseline is a committed measurement rather than a fixed threshold.
 Absolute thresholds either sit so low they never fire or get raised until

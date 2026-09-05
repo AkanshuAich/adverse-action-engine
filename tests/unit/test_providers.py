@@ -21,6 +21,8 @@ from aae.domain.errors import ConfigurationError, ProviderError
 from aae.generation.providers.base import (
     OpenAICompatibleProvider,
     ProviderConfig,
+    _parse_duration,
+    _retry_after_seconds,
     strict_schema,
 )
 from aae.generation.providers.registry import (
@@ -155,13 +157,159 @@ class TestMalformedResponses:
             provider.complete(system="s", user="u", schema=Answer)
 
 
-class TestTransportFailures:
-    def test_rate_limiting_is_named_explicitly(self):
-        """Free tiers cap requests per minute; the message should say so."""
+class TestRateLimits:
+    """A 429 says when to ask again; discarding the work ignores it.
+
+    An evaluation run against a free tier lost 71 of 100 cases to rate limits,
+    and lost them inside fourteen seconds: a refused call returns immediately,
+    so the throttle between cases never applied to the failures. Waiting is not
+    an optimisation here - without it the harness cannot measure a free tier at
+    all.
+    """
+
+    def test_a_caller_that_cannot_wait_still_fails_fast(self):
+        """Zero retries is the default, because an HTTP handler must not block."""
         provider = _provider_returning("slow down", status=429)
+
         with pytest.raises(ProviderError, match="rate limited"):
             provider.complete(system="s", user="u", schema=Answer)
 
+    def test_a_batch_caller_waits_and_succeeds(self):
+        responses = [
+            httpx.Response(
+                429,
+                headers={"x-ratelimit-remaining-tokens": "0", "x-ratelimit-reset-tokens": "1.05s"},
+            ),
+            httpx.Response(
+                200, json={"choices": [{"message": {"content": '{"verdict": "ok", "score": 1.0}'}}]}
+            ),
+        ]
+        slept: list[float] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return responses.pop(0)
+
+        provider = OpenAICompatibleProvider(
+            _config(rate_limit_retries=3),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        provider._sleep = slept.append  # type: ignore[method-assign]
+
+        answer = provider.complete(system="s", user="u", schema=Answer)
+
+        assert answer.verdict == "ok"
+        assert slept == [pytest.approx(1.05)]
+
+    def test_it_gives_up_after_the_configured_attempts(self):
+        slept: list[float] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                429,
+                headers={"x-ratelimit-remaining-tokens": "0", "x-ratelimit-reset-tokens": "1s"},
+            )
+
+        provider = OpenAICompatibleProvider(
+            _config(rate_limit_retries=2),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        provider._sleep = slept.append  # type: ignore[method-assign]
+
+        with pytest.raises(ProviderError, match="still limited after 2 attempts"):
+            provider.complete(system="s", user="u", schema=Answer)
+
+        assert len(slept) == 2
+
+    def test_it_refuses_to_wait_out_a_daily_allowance(self):
+        """A reset an hour away is a spent quota, not a burst."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                429,
+                headers={
+                    "x-ratelimit-remaining-requests": "0",
+                    "x-ratelimit-reset-requests": "1h43m40s",
+                },
+            )
+
+        provider = OpenAICompatibleProvider(
+            _config(rate_limit_retries=3),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        with pytest.raises(ProviderError, match="beyond the"):
+            provider.complete(system="s", user="u", schema=Answer)
+
+    def test_it_refuses_to_guess_when_told_nothing(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(429)
+
+        provider = OpenAICompatibleProvider(
+            _config(rate_limit_retries=3),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        with pytest.raises(ProviderError, match="did not say for how long"):
+            provider.complete(system="s", user="u", schema=Answer)
+
+
+class TestRetryAfter:
+    """The wait must come from the bucket that is empty.
+
+    Taking the longest reset header looks safer and is wrong:
+    x-ratelimit-reset-requests reports when a daily allowance returns to full,
+    which is hours away even with most of it unspent. Waiting on that for a
+    per-minute token limit turns a one-second pause into an abandoned run.
+    """
+
+    def test_an_empty_token_bucket_gives_a_short_wait(self):
+        wait = _retry_after_seconds(
+            httpx.Headers(
+                {
+                    "x-ratelimit-remaining-tokens": "0",
+                    "x-ratelimit-reset-tokens": "1.05s",
+                    "x-ratelimit-remaining-requests": "928",
+                    "x-ratelimit-reset-requests": "1h43m40s",
+                }
+            )
+        )
+
+        assert wait == pytest.approx(1.05)
+
+    def test_retry_after_overrides_the_reset_headers(self):
+        wait = _retry_after_seconds(
+            httpx.Headers(
+                {
+                    "retry-after": "3",
+                    "x-ratelimit-remaining-tokens": "0",
+                    "x-ratelimit-reset-tokens": "60s",
+                }
+            )
+        )
+
+        assert wait == pytest.approx(3.0)
+
+    def test_no_signal_at_all_returns_nothing(self):
+        assert _retry_after_seconds(httpx.Headers({})) is None
+
+    @pytest.mark.parametrize(
+        ("raw", "seconds"),
+        [
+            ("1.05s", 1.05),
+            ("7m12.799s", 432.799),
+            ("1h43m40.799s", 6220.799),
+            ("620ms", 0.62),
+            ("2", 2.0),
+        ],
+    )
+    def test_it_reads_the_duration_format_these_backends_send(self, raw: str, seconds: float):
+        assert _parse_duration(raw) == pytest.approx(seconds)
+
+    def test_an_unreadable_duration_is_not_invented(self):
+        assert _parse_duration("soon") is None
+
+
+class TestTransportFailures:
     def test_a_server_error_carries_the_status(self):
         provider = _provider_returning("upstream exploded", status=503)
         with pytest.raises(ProviderError, match="HTTP 503"):

@@ -23,6 +23,8 @@ than flow onward as a half-populated notice.
 from __future__ import annotations
 
 import json
+import re
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final, Protocol, TypeVar, runtime_checkable
 
@@ -38,6 +40,14 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+MAX_RATE_LIMIT_WAIT_SECONDS: Final[float] = 65.0
+"""Longest single pause honoured before giving up on a rate limit.
+
+Slightly over a minute, because the limit that binds a free tier is measured
+per minute and a longer reset means a daily allowance has run out - which
+waiting will not fix.
+"""
 
 DEFAULT_TIMEOUT_SECONDS: Final[float] = 90.0
 DEFAULT_MAX_TOKENS: Final[int] = 2_000
@@ -72,6 +82,87 @@ def strict_schema(schema: type[BaseModel]) -> dict[str, Any]:
         return node
 
     return dict(tighten(schema.model_json_schema()))
+
+
+_DURATION_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"(?:(?P<hours>[\d.]+)h)?(?:(?P<minutes>[\d.]+)m(?!s))?(?:(?P<seconds>[\d.]+)s)?"
+    r"(?:(?P<millis>[\d.]+)ms)?"
+)
+
+
+def _parse_duration(value: str) -> float | None:
+    """Read a duration in the form these backends actually send.
+
+    ``retry-after`` is seconds, but the rate-limit reset headers are written
+    like ``7m12.5s`` or ``1.05s`` or ``620ms``.
+
+    Args:
+        value: The header value.
+
+    Returns:
+        Seconds, or ``None`` if nothing could be read from it.
+    """
+    text = value.strip()
+    try:
+        return float(text)
+    except ValueError:
+        pass
+
+    match = _DURATION_PATTERN.fullmatch(text)
+    if match is None or not any(match.groupdict().values()):
+        return None
+
+    parts = {key: float(raw) for key, raw in match.groupdict().items() if raw is not None}
+    return (
+        parts.get("hours", 0.0) * 3600.0
+        + parts.get("minutes", 0.0) * 60.0
+        + parts.get("seconds", 0.0)
+        + parts.get("millis", 0.0) / 1000.0
+    )
+
+
+def _retry_after_seconds(headers: httpx.Headers) -> float | None:
+    """Decide how long to wait before asking again.
+
+    ``retry-after`` is authoritative when present. Otherwise the wait comes
+    from the bucket that is actually empty, which the ``remaining`` headers
+    identify.
+
+    Reading the reset headers alone is not enough, and taking the longest of
+    them is wrong: ``x-ratelimit-reset-requests`` reports when the request
+    bucket returns to *full*, which on a daily allowance is hours away even
+    with hundreds of requests still in hand. Waiting on that for a
+    tokens-per-minute limit turns a one-second pause into an abandoned run.
+
+    Args:
+        headers: The response headers.
+
+    Returns:
+        Seconds to wait, or ``None`` if the response gave no usable signal.
+    """
+    direct = headers.get("retry-after")
+    if direct is not None and (parsed := _parse_duration(direct)) is not None:
+        return parsed
+
+    waits = [
+        reset
+        for remaining_header, reset_header in (
+            ("x-ratelimit-remaining-tokens", "x-ratelimit-reset-tokens"),
+            ("x-ratelimit-remaining-requests", "x-ratelimit-reset-requests"),
+        )
+        if (raw_remaining := headers.get(remaining_header)) is not None
+        and (remaining := _parse_duration(raw_remaining)) is not None
+        and remaining <= 0
+        and (raw_reset := headers.get(reset_header)) is not None
+        and (reset := _parse_duration(raw_reset)) is not None
+    ]
+    if waits:
+        return max(waits)
+
+    # Nothing reported empty. The per-minute token bucket is the limit a free
+    # tier hits in practice, so its reset is the best available guess.
+    raw = headers.get("x-ratelimit-reset-tokens")
+    return _parse_duration(raw) if raw is not None else None
 
 
 @runtime_checkable
@@ -128,6 +219,11 @@ class ProviderConfig:
             supplied schema. Declared per backend rather than discovered by
             catching a 400, so an unsupported backend is a known limitation
             recorded in configuration and not a silent downgrade.
+        rate_limit_retries: How many times to wait out a rate limit and try
+            again. Zero for anything serving a request: a caller waiting on an
+            HTTP response wants a fast 502, not a worker blocked for a minute.
+            Non-zero for batch work, where the run is long anyway and losing
+            the case costs more than waiting for it.
     """
 
     name: str
@@ -137,6 +233,7 @@ class ProviderConfig:
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     max_tokens: int = DEFAULT_MAX_TOKENS
     supports_json_schema: bool = True
+    rate_limit_retries: int = 0
 
 
 class OpenAICompatibleProvider:
@@ -204,25 +301,88 @@ class OpenAICompatibleProvider:
         }
 
         url = f"{self._config.base_url.rstrip('/')}/chat/completions"
-
-        try:
-            response = self._client.post(url, json=payload, headers=self._headers())
-        except httpx.HTTPError as exc:
-            msg = f"{self.name}: request failed: {exc}"
-            raise ProviderError(msg) from exc
-
-        if response.status_code == httpx.codes.TOO_MANY_REQUESTS:
-            msg = (
-                f"{self.name}: rate limited. Free tiers cap requests and tokens per "
-                "minute; the eval runner throttles for this reason."
-            )
-            raise ProviderError(msg)
+        response = self._post_honouring_rate_limits(url, payload)
 
         if response.status_code >= httpx.codes.BAD_REQUEST:
             msg = f"{self.name}: HTTP {response.status_code}: {response.text[:300]}"
             raise ProviderError(msg)
 
         return self._parse(response.json(), schema)
+
+    def _post_honouring_rate_limits(self, url: str, payload: dict[str, Any]) -> httpx.Response:
+        """Send the request, waiting out a rate limit if one is configured.
+
+        A 429 is not a failure of the request; it is the backend saying when to
+        ask again, and it says so in a header. Treating it as fatal discarded
+        71 of 100 cases in one evaluation run - and discarded them in fourteen
+        seconds, because a refused call returns instantly and the caller's
+        throttle never applies. Guessing a slower throttle does not fix that:
+        the limit is on tokens, which vary per case, so any fixed spacing is
+        either too slow for most cases or too fast for some.
+
+        Args:
+            url: The chat-completions endpoint.
+            payload: The request body.
+
+        Returns:
+            The response, which may still carry an error status.
+
+        Raises:
+            ProviderError: On transport failure, or a rate limit that outlasts
+                the configured retries.
+        """
+        for attempt in range(self._config.rate_limit_retries + 1):
+            try:
+                response = self._client.post(url, json=payload, headers=self._headers())
+            except httpx.HTTPError as exc:
+                msg = f"{self.name}: request failed: {exc}"
+                raise ProviderError(msg) from exc
+
+            if response.status_code != httpx.codes.TOO_MANY_REQUESTS:
+                return response
+
+            remaining = self._config.rate_limit_retries - attempt
+            if remaining <= 0:
+                msg = (
+                    f"{self.name}: rate limited, and still limited after "
+                    f"{self._config.rate_limit_retries} attempts to wait it out."
+                )
+                raise ProviderError(msg)
+
+            wait = _retry_after_seconds(response.headers)
+            if wait is None:
+                msg = (
+                    f"{self.name}: rate limited, and the response did not say for how "
+                    "long. Waiting an arbitrary period would be guessing."
+                )
+                raise ProviderError(msg)
+            if wait > MAX_RATE_LIMIT_WAIT_SECONDS:
+                msg = (
+                    f"{self.name}: rate limited for {wait:.0f}s, beyond the "
+                    f"{MAX_RATE_LIMIT_WAIT_SECONDS:.0f}s ceiling. A reset that distant "
+                    "is a daily allowance, and waiting will not recover it."
+                )
+                raise ProviderError(msg)
+
+            logger.warning(
+                "rate_limited_waiting",
+                provider=self.name,
+                wait_seconds=round(wait, 2),
+                attempts_left=remaining,
+            )
+            self._sleep(wait)
+
+        raise AssertionError("unreachable: the loop returns or raises")  # pragma: no cover
+
+    def _sleep(self, seconds: float) -> None:
+        """Pause between attempts.
+
+        Isolated so a test can drive the retry path without spending the wait.
+
+        Args:
+            seconds: How long to pause.
+        """
+        time.sleep(seconds)
 
     def _response_format(self, schema: type[BaseModel]) -> dict[str, Any]:
         """Describe the required response shape to the backend.

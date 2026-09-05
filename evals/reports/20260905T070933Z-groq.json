@@ -1,0 +1,26 @@
+{
+  "generated_at": "2026-09-05T07:09:33.707736+00:00",
+  "provider": "groq",
+  "failure_profile": null,
+  "metrics": {
+    "cases": 29,
+    "groundedness_rate": 0.7586,
+    "post_repair_rate": 1.0,
+    "escalation_rate": 0.0,
+    "factor_fidelity": 1.0,
+    "citation_precision": 1.0,
+    "element_coverage": 0.8793,
+    "prohibited_content_rate": 0.0,
+    "prohibited_attempts_caught": 0,
+    "mean_attempts": 1.241,
+    "readability_mean": 56.31,
+    "readability_below_floor": 0.0,
+    "latency_p50_ms": 5900.69,
+    "latency_p95_ms": 10990.19,
+    "provider_failures": 71,
+    "violations_by_code": {
+      "element_coverage": 14
+    }
+  },
+  "escalated_applications": []
+}

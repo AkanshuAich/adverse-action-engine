@@ -43,12 +43,22 @@ SUPPORTS_JSON_SCHEMA: Final[dict[LLMProvider, bool]] = {
 }
 
 
-def build_provider(settings: Settings, client: httpx.Client | None = None) -> StructuredProvider:
+def build_provider(
+    settings: Settings,
+    client: httpx.Client | None = None,
+    *,
+    rate_limit_retries: int = 0,
+) -> StructuredProvider:
     """Construct the configured provider.
 
     Args:
         settings: Supplies the provider choice, model, and credential.
         client: Injected HTTP client, for tests.
+        rate_limit_retries: How many times to wait out a rate limit.
+            Left at zero for anything answering an HTTP request, where
+            a blocked worker is worse than a fast failure. Batch work
+            sets it, because there losing the case costs more than the
+            wait.
 
     Returns:
         A provider ready to call.
@@ -72,6 +82,7 @@ def build_provider(settings: Settings, client: httpx.Client | None = None) -> St
         # credential to start.
         api_key=settings.llm_api_key(),
         supports_json_schema=SUPPORTS_JSON_SCHEMA[provider],
+        rate_limit_retries=rate_limit_retries,
     )
 
     logger.info("llm_provider_selected", provider=config.name, model=config.model)
