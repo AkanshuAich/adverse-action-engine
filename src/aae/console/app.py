@@ -17,18 +17,42 @@ Run with:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import streamlit as st
+from sqlalchemy.exc import SQLAlchemyError
 
 from aae.audit.repository import AuditRepository
 from aae.audit.session import create_database_engine, create_session_factory
 from aae.config import get_settings
 from aae.console.review import ReviewQueue
-from aae.logging import configure_logging
+from aae.database_url import describe_target, is_local_default
+from aae.logging import configure_logging, get_logger
 
 if TYPE_CHECKING:
     from aae.console.review import ReviewCase
+
+logger = get_logger(__name__)
+
+NOT_CONFIGURED: Final[str] = """
+The database address points at **localhost**. Locally that is correct and the
+database is simply not running. On a deployed console it means
+`AAE_DATABASE_URL` never reached the process, so settings fell back to the
+development default - and a deployed console has no Postgres of its own.
+
+Set it in the platform's secrets as a **root-level** key, which is what makes
+it arrive as an environment variable:
+
+```toml
+AAE_DATABASE_URL = "postgresql://aae_app:PASSWORD@HOST/aae?sslmode=require"
+```
+
+Use the `aae_app` role, never the owner. Postgres denies `aae_app` `UPDATE`
+and `DELETE` on the audit table, which is what stops a public console from
+rewriting history.
+"""
+"""Shown when the configured address is a loopback one."""
+
 
 PAGE_TITLE = "Adverse Action Review"
 
@@ -178,13 +202,50 @@ def _render_actions(queue: ReviewQueue, case: ReviewCase, reviewer: str) -> None
             st.rerun()
 
 
+def _render_connection_failure(exc: Exception) -> None:
+    """Explain a failed database connection without leaking the credential.
+
+    Streamlit redacts any exception that might carry a password, so a deployed
+    app shows a stack trace ending in ``OperationalError`` and nothing about
+    what went wrong. The two likely causes look identical there and need
+    opposite fixes, so they are named here instead.
+
+    Args:
+        exc: The connection failure.
+    """
+    settings = get_settings()
+    target = describe_target(settings.database_url)
+
+    st.error(f"Cannot reach the audit database at {target}.")
+
+    if is_local_default(settings.database_url):
+        st.markdown(
+            NOT_CONFIGURED,
+        )
+    else:
+        st.markdown(
+            "The address is configured, so the credential, the network path or "
+            "TLS is at fault. Check the password, and that the connection string "
+            "ends in `?sslmode=require` - most managed Postgres refuses a "
+            "plaintext connection and reports it as a connection failure rather "
+            "than a TLS one."
+        )
+
+    logger.error("console_database_unreachable", target=target, error=str(exc))
+
+
 def main() -> None:
     """Draw the console."""
     st.set_page_config(page_title=PAGE_TITLE, layout="wide")
     st.title(PAGE_TITLE)
 
-    queue = _queue()
-    pending = queue.pending()
+    try:
+        queue = _queue()
+        pending = queue.pending()
+    except SQLAlchemyError as exc:
+        _queue.clear()
+        _render_connection_failure(exc)
+        return
     reviewer = _render_sidebar(queue, pending)
 
     if not pending:

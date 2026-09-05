@@ -8,7 +8,7 @@ are pooled.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -22,6 +22,13 @@ if TYPE_CHECKING:
     from aae.config import Settings
 
 logger = get_logger(__name__)
+
+CONNECT_TIMEOUT_SECONDS: Final[int] = 10
+"""How long to wait for a connection before calling it unreachable.
+
+Long enough for a suspended Neon instance to wake, short enough that a
+misconfigured host is reported rather than waited on.
+"""
 
 
 def create_database_engine(settings: Settings, *, echo: bool = False) -> Engine:
@@ -45,6 +52,12 @@ def create_database_engine(settings: Settings, *, echo: bool = False) -> Engine:
         pool_recycle=280,
         pool_size=5,
         max_overflow=5,
+        # Fail rather than hang. Without this a wrong host does not raise: it
+        # waits on the operating system's TCP timeout, which outlasts anyone's
+        # patience. A deployed console then serves a blank page indefinitely,
+        # with no error to read - strictly worse than a stack trace, because
+        # nothing indicates that anything is wrong at all.
+        connect_args={"connect_timeout": CONNECT_TIMEOUT_SECONDS},
     )
     logger.info("database_engine_created", pool_size=5)
     return engine

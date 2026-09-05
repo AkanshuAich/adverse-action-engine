@@ -10,6 +10,7 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from aae.config import Environment, LLMProvider, Settings, get_settings
+from aae.database_url import describe_target, is_local_default
 from aae.domain.errors import ConfigurationError
 
 
@@ -155,3 +156,58 @@ class TestShippedSampleMatchesShippedDefault:
         engine = DecisionEngine(model, threshold=_settings().decision_threshold)
 
         assert engine.decide(frame).decision is Decision.DECLINE
+
+
+class TestConnectionDiagnostics:
+    """A failed connection must be diagnosable without exposing the password.
+
+    Deployment platforms redact any error that might carry a credential, which
+    withholds the useful half along with the dangerous half: a live console
+    showed a stack trace ending in OperationalError and nothing about what it
+    had dialled. Describing the target by host and database alone keeps the
+    diagnosis and drops the secret.
+    """
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("postgresql+psycopg://aae_app:pw@localhost:5433/aae", "localhost:5433/aae"),
+            (
+                "postgresql://u:p@db.example.neon.tech/aae?sslmode=require",
+                "db.example.neon.tech/aae",
+            ),
+            ("postgresql://u:p@127.0.0.1:5432/aae", "127.0.0.1:5432/aae"),
+        ],
+    )
+    def test_it_names_the_target(self, url: str, expected: str):
+        assert describe_target(url) == expected
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "postgresql+psycopg://aae_app:aae_dev_password@localhost:5433/aae",
+            "postgresql://user:hunter2@db.example.neon.tech/aae?sslmode=require",
+        ],
+    )
+    def test_the_password_never_appears(self, url: str):
+        described = describe_target(url)
+
+        assert "aae_dev_password" not in described
+        assert "hunter2" not in described
+        assert "@" not in described
+
+    def test_an_unreadable_url_does_not_raise(self):
+        """A diagnostic that crashes replaces one unreadable error with another."""
+        assert describe_target("not a url at all")
+
+    @pytest.mark.parametrize(
+        ("url", "local"),
+        [
+            ("postgresql://u:p@localhost:5433/aae", True),
+            ("postgresql://u:p@127.0.0.1:5432/aae", True),
+            ("postgresql://u:p@[::1]:5432/aae", True),
+            ("postgresql://u:p@db.example.neon.tech/aae", False),
+        ],
+    )
+    def test_it_recognises_the_local_default(self, url: str, local: bool):
+        assert is_local_default(url) is local
