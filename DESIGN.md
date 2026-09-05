@@ -344,7 +344,49 @@ The general form is worth stating, because it is not specific to rate limits:
 **an evaluation harness must gate on whether the evaluation happened before it
 gates on what the evaluation said.**
 
-## 19. Known weaknesses
+## 19. Two rate limits, and only one of them is in the headers
+
+Measuring the pipeline against a live backend took three attempts, and the
+first two diagnoses were wrong in instructive ways.
+
+**Attempt one.** 71 of 100 cases abandoned, all within fourteen seconds. A 429
+returns instantly, so the runner's throttle — which spaces out work that takes
+time — never applied to the failures. Concluded: honour the rate limit rather
+than treat it as fatal. Correct, and insufficient.
+
+**Attempt two.** 88 of 100 abandoned, with the backoff engaging only twice. The
+waits being requested were four to six minutes, past the ceiling. Concluded:
+the ceiling is too low, because a token bucket refilling continuously can
+legitimately report a long reset when deeply in debt. **Wrong.**
+
+**What was actually happening.** Groq enforces a limit on tokens *per day* —
+200,000 — alongside the per-minute one. It had been exhausted. And a daily
+allowance appears in **no response header**: the request that finally revealed
+it reported `x-ratelimit-remaining-tokens: 8000` out of a limit of 8000, a
+completely full bucket, and failed anyway. The body said so in a sentence:
+
+> Rate limit reached ... on tokens per day (TPD): Limit 200000, Used 197204
+
+That sentence was in every one of the 159 failed responses across both runs.
+The code discarded it and substituted a message of its own, so two rounds of
+diagnosis were spent inferring a cause from headers that structurally could not
+express it.
+
+Three things changed:
+
+- The backend's own explanation is quoted in the error. A message written at
+  the call site can only describe what the author imagined; the body describes
+  what happened.
+- The per-minute limit is waited out, which is what it is for.
+- The README states the ceiling: roughly 35 cases per day, so a live run is a
+  labelled subset and the simulated run remains the gate.
+
+The general lesson is not about rate limits. **When a service explains itself
+in the response body, do not replace that explanation with your own.** The
+inference was reasonable both times and wrong both times, and the answer was
+sitting in a field the code was throwing away.
+
+## 20. Known weaknesses
 
 Listed because a design document that records only successes is a sales
 brochure.

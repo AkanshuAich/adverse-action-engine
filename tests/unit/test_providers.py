@@ -220,9 +220,7 @@ class TestRateLimits:
 
         assert len(slept) == 2
 
-    def test_it_refuses_to_wait_out_a_daily_allowance(self):
-        """A reset an hour away is a spent quota, not a burst."""
-
+    def test_it_refuses_to_wait_beyond_the_ceiling(self):
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 429,
@@ -238,6 +236,50 @@ class TestRateLimits:
         )
 
         with pytest.raises(ProviderError, match="beyond the"):
+            provider.complete(system="s", user="u", schema=Answer)
+
+    def test_the_backend_explanation_reaches_the_caller(self):
+        """The headers describe per-minute buckets only.
+
+        A daily allowance appears in none of them: an exhausted one still
+        reports a full per-minute bucket, and every request fails anyway. The
+        body names the limit that was actually enforced, so it must not be
+        swallowed - diagnosing this from headers alone cost two wrong
+        conclusions.
+        """
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                429,
+                headers={"x-ratelimit-remaining-tokens": "8000"},
+                json={
+                    "error": {
+                        "message": (
+                            "Rate limit reached for model `openai/gpt-oss-120b` on "
+                            "tokens per day (TPD): Limit 200000, Used 197204."
+                        )
+                    }
+                },
+            )
+
+        provider = OpenAICompatibleProvider(
+            _config(),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        with pytest.raises(ProviderError, match="tokens per day"):
+            provider.complete(system="s", user="u", schema=Answer)
+
+    def test_a_body_that_is_not_json_is_still_reported(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(429, text="slow down please")
+
+        provider = OpenAICompatibleProvider(
+            _config(),
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+        with pytest.raises(ProviderError, match="slow down please"):
             provider.complete(system="s", user="u", schema=Answer)
 
     def test_it_refuses_to_guess_when_told_nothing(self):

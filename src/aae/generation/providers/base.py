@@ -90,6 +90,30 @@ _DURATION_PATTERN: Final[re.Pattern[str]] = re.compile(
 )
 
 
+def _limit_detail(response: httpx.Response) -> str:
+    """Quote what the backend said about the limit.
+
+    The per-request headers describe only the per-minute buckets. A daily
+    allowance does not appear in them at all, so a run that has exhausted one
+    reads ``x-ratelimit-remaining-tokens: 8000`` - a full bucket - and every
+    request still fails. The body is where the backend names the limit it
+    actually enforced, in a sentence, and it was there the whole time while
+    this code inferred the wrong cause from headers twice.
+
+    Args:
+        response: The 429 response.
+
+    Returns:
+        The backend's own explanation, or a note that it gave none.
+    """
+    try:
+        message = response.json()["error"]["message"]
+    except (ValueError, KeyError, TypeError):
+        text = response.text.strip()
+        return f"Backend said: {text[:300]}" if text else "The backend gave no explanation."
+    return f"Backend said: {str(message)[:300]}"
+
+
 def _parse_duration(value: str) -> float | None:
     """Read a duration in the form these backends actually send.
 
@@ -345,7 +369,8 @@ class OpenAICompatibleProvider:
             if remaining <= 0:
                 msg = (
                     f"{self.name}: rate limited, and still limited after "
-                    f"{self._config.rate_limit_retries} attempts to wait it out."
+                    f"{self._config.rate_limit_retries} attempts to wait it out. "
+                    f"{_limit_detail(response)}"
                 )
                 raise ProviderError(msg)
 
@@ -353,14 +378,15 @@ class OpenAICompatibleProvider:
             if wait is None:
                 msg = (
                     f"{self.name}: rate limited, and the response did not say for how "
-                    "long. Waiting an arbitrary period would be guessing."
+                    f"long. Waiting an arbitrary period would be guessing. "
+                    f"{_limit_detail(response)}"
                 )
                 raise ProviderError(msg)
             if wait > MAX_RATE_LIMIT_WAIT_SECONDS:
                 msg = (
                     f"{self.name}: rate limited for {wait:.0f}s, beyond the "
-                    f"{MAX_RATE_LIMIT_WAIT_SECONDS:.0f}s ceiling. A reset that distant "
-                    "is a daily allowance, and waiting will not recover it."
+                    f"{MAX_RATE_LIMIT_WAIT_SECONDS:.0f}s ceiling. "
+                    f"{_limit_detail(response)}"
                 )
                 raise ProviderError(msg)
 

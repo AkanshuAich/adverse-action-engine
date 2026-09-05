@@ -341,13 +341,22 @@ about any real model's quality. Reporting one as the other would be exactly the
 dishonesty this project argues against.
 
 Live figures are a manual step, because a gate that needs a credential and
-obeys a rate limit cannot run in CI. The throttle is not incidental: Groq's
-free tier allows 8,000 tokens per minute, a case costs roughly 3,500, and an
-unthrottled run is abandoned rather than slow.
+obeys a rate limit cannot run in CI.
+
+**The free tier cannot run the full golden set in a day.** Groq allows 200,000
+tokens per day and a case costs roughly 5,000 across selection and rendering,
+so about 35 cases fit — and a repair attempt costs another selection call. A
+live run is therefore a labelled subset, never a substitute for the 100-case
+simulated run above.
+
+Two limits apply and they fail differently. The per-minute token bucket is
+transient and is waited out. The daily allowance is not, and it does not appear
+in any response header: an exhausted daily quota still reports a *full*
+per-minute bucket while every request fails. Only the response body names it.
 
 ```bash
-python -m evals.runner --provider simulated                # the CI gate
-python -m evals.runner --provider groq --throttle 35       # live figures
+python -m evals.runner --provider simulated                     # the CI gate
+python -m evals.runner --provider groq --throttle 25 --limit 30 # a live subset
 ```
 
 ## The gate
