@@ -1,6 +1,8 @@
-# Spaces installs from this file. The console needs the core package and the
-# ml extras (the review screen renders SHAP factors from the audit payload,
-# and the package imports pandas at module scope); it does NOT need the ai
-# extras, because generation happens in the API rather than in the console.
-adverse-action-engine[ml] @ git+https://github.com/AkanshuAich/adverse-action-engine@main
+# The console reads the audit chain and renders it. It loads no model, calls no
+# language model, and imports neither pandas nor numpy - verified by importing
+# aae.console.app and checking sys.modules, after an earlier version of this
+# file installed the ml extra on the strength of a comment claiming otherwise.
+# That pulled xgboost, shap, mlflow and fairlearn into a deployment that uses
+# none of them.
+adverse-action-engine @ git+https://github.com/AkanshuAich/adverse-action-engine@main
 streamlit>=1.40
