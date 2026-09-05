@@ -38,8 +38,9 @@ AGAINST this application; there are no favourable factors in the list.
 2. Give at most the stated maximum number of principal reasons. Choose the \
 strongest, which are the lowest-ranked numbers.
 3. Every factual claim MUST use a field_name from the supplied factors and a \
-stated_value matching the value supplied. Round for readability if you wish; do \
-not change the figure.
+stated_value matching the value supplied. The figures are already rounded for \
+presentation: copy them exactly as given and do not restate, extend or \
+recalculate them.
 4. Every citation MUST quote the supplied provision text word for word. Copy a \
 phrase from it. Never write a quotation from memory.
 5. NEVER refer to the applicant's sex, gender, age, marital status, race, \
@@ -70,6 +71,25 @@ applicant how to seek clarification or escalate.
 Return JSON only, matching the requested schema."""
 
 
+def _as_written(value: float | str | None) -> float | int | str | None:
+    """Present a figure the way it would be written down.
+
+    A whole number carries no fractional part in a letter: an income is
+    136,800, not 136800.0. JSON has no way to say "a float that happens to be
+    integral", so the trailing zero survives serialisation and the model copies
+    it faithfully into the prose.
+
+    Args:
+        value: The rounded payload value.
+
+    Returns:
+        An ``int`` for a whole number, and the value unchanged otherwise.
+    """
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
 def build_select_user_message(payload: GenerationPayload) -> str:
     """Build the stage-one user message.
 
@@ -83,7 +103,7 @@ def build_select_user_message(payload: GenerationPayload) -> str:
         {
             "factor_id": factor.factor_id,
             "name": factor.display_name,
-            "applicant_value": factor.value,
+            "applicant_value": _as_written(factor.value),
             "rank": factor.rank,
         }
         for factor in payload.factors

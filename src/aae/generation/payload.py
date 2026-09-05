@@ -21,10 +21,17 @@ discrimination is not.
 **Raw SHAP magnitudes** are sent as direction and rank only. The log-odds
 figure is meaningless to an applicant and inviting a model to paraphrase it
 invites it into the letter.
+
+**Figures are rounded before the model sees them.** Asking it to round for
+readability left the decision to its discretion, and it declined: a live notice
+quoted a bureau score to sixteen decimal places, which is accurate, verifiable,
+and not something you would send a customer. A value the model never receives
+at full precision cannot be copied into a letter at full precision.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
@@ -70,6 +77,35 @@ def sanitise_text_value(value: str) -> str:
     return cleaned
 
 
+PRESENTATION_SIGNIFICANT_FIGURES: Final[int] = 4
+
+
+def round_for_presentation(
+    value: float, *, significant_figures: int = PRESENTATION_SIGNIFICANT_FIGURES
+) -> float:
+    """Reduce a figure to a precision fit for a customer letter.
+
+    Four significant figures carries a relative error below 5e-4, an order of
+    magnitude inside the verifier's 0.005 tolerance for presentation rounding.
+    The rounding is therefore invisible to value accuracy: a stated figure
+    still matches the record, it just no longer trails fifteen digits.
+
+    Args:
+        value: The exact figure from the scored record.
+        significant_figures: Digits to keep.
+
+    Returns:
+        The rounded figure. Non-finite values and zero are returned unchanged,
+        having no magnitude to round to.
+    """
+    if value == 0.0 or not math.isfinite(value):
+        return value
+
+    magnitude = math.floor(math.log10(abs(value)))
+    decimals = significant_figures - 1 - magnitude
+    return round(value, decimals) if decimals > 0 else float(round(value))
+
+
 @dataclass(frozen=True)
 class PayloadFactor:
     """One factor as described to the model.
@@ -77,7 +113,9 @@ class PayloadFactor:
     Attributes:
         factor_id: The identifier the model must cite in a reason.
         display_name: Plain-language name, suitable for a customer letter.
-        value: The applicant's value for this factor.
+        value: The applicant's value, rounded for presentation. The exact
+            figure stays in the decision, which is what verification compares
+            against; the model is given only what belongs in a letter.
         rank: Position by contribution, 1 being strongest.
     """
 
@@ -157,7 +195,11 @@ def build_payload(
             factor_id=factor.factor_id,
             display_name=factor.display_name,
             value=(
-                sanitise_text_value(factor.value) if isinstance(factor.value, str) else factor.value
+                sanitise_text_value(factor.value)
+                if isinstance(factor.value, str)
+                else round_for_presentation(factor.value)
+                if factor.value is not None
+                else None
             ),
             rank=factor.rank,
         )

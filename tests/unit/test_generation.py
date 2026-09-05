@@ -11,6 +11,7 @@ way to make the first attempt fail in a chosen way and the second succeed.
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 from typing import Final
 
@@ -28,6 +29,7 @@ from aae.generation.graph import NoticeGenerator
 from aae.generation.payload import (
     ALLOWED_FEATURE_FIELDS,
     build_payload,
+    round_for_presentation,
     sanitise_text_value,
 )
 from aae.generation.providers.stub import ScriptedProvider
@@ -46,6 +48,7 @@ from aae.retrieval.corpus import (
     india_rbi_corpus,
 )
 from aae.verification.prose import check_prose
+from aae.verification.rules import VerificationPolicy
 from aae.verification.verifier import NoticeVerifier
 
 APPLICATION_ID: Final[str] = "APP-2002"
@@ -470,3 +473,67 @@ class TestProseNumericEdges:
         notice = selection.to_domain(APPLICATION_ID, INDIA_RBI.code)
         body = f"{CLEAN_BODY} Your recorded income was 149,900."
         assert check_prose(body, notice, make_payload(), INDIA_RBI) == ()
+
+
+class TestPresentationRounding:
+    """A figure the model never sees at full precision cannot be copied at it.
+
+    The prompt used to say "round for readability if you wish", which left the
+    decision to the model. A live notice then quoted a bureau score as
+    0.0935070975944776 - accurate, verifiable, and not something anyone would
+    send a customer. Rounding now happens before the payload is built.
+    """
+
+    @pytest.mark.parametrize(
+        ("exact", "expected"),
+        [
+            (0.0935070975944776, 0.09351),
+            (0.169165769080108, 0.1692),
+            (1.8347953216374269, 1.835),
+            (0.0749003984063745, 0.0749),
+            (136_800.0, 136_800.0),
+            (0.0, 0.0),
+            (-0.0935070975944776, -0.09351),
+        ],
+    )
+    def test_keeps_four_significant_figures(self, exact: float, expected: float):
+        assert round_for_presentation(exact) == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        "exact",
+        [0.0935070975944776, 1.8347953216374269, 136_800.0, 0.0001234567, 9.999999],
+    )
+    def test_stays_within_the_verifier_tolerance(self, exact: float):
+        """Rounding must be invisible to value accuracy, or it trades one bug
+        for a worse one: a letter that reads well and fails verification."""
+        rounded = round_for_presentation(exact)
+
+        assert abs(rounded - exact) <= abs(exact) * VerificationPolicy().value_relative_tolerance
+
+    def test_leaves_non_finite_values_alone(self):
+        """No magnitude to round to, and log10 would raise."""
+        assert math.isnan(round_for_presentation(math.nan))
+        assert math.isinf(round_for_presentation(math.inf))
+
+    def test_the_payload_carries_the_rounded_figure(self):
+        decision = make_decision().model_copy(
+            update={
+                "factors": (
+                    _factor("EXT_SOURCE_2", 1, FactorDirection.ADVERSE, 0.0935070975944776),
+                )
+            }
+        )
+        payload = make_payload(decision)
+
+        assert payload.factors[0].value == pytest.approx(0.09351)
+
+    def test_a_categorical_value_is_untouched(self):
+        """Rounding applies to figures; a job title has no significant digits."""
+        decision = make_decision().model_copy(
+            update={
+                "factors": (_factor("OCCUPATION_TYPE", 1, FactorDirection.ADVERSE, "Laborers"),)
+            }
+        )
+        payload = make_payload(decision)
+
+        assert payload.factors[0].value == "Laborers"
