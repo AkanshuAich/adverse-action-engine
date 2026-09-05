@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -29,13 +30,44 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# A URL set programmatically (as the integration tests do) wins; otherwise fall
-# back to the environment, then to the local development default.
-if not config.get_main_option("sqlalchemy.url", default=None):
-    config.set_main_option(
-        "sqlalchemy.url",
-        os.environ.get(MIGRATION_URL_ENV, DEFAULT_MIGRATION_URL),
-    )
+
+def _migration_url() -> str:
+    """Resolve the owner connection string.
+
+    Precedence: a URL set programmatically (the integration tests do this),
+    then the shell environment, then ``.env``, then the local development
+    default.
+
+    ``.env`` is read directly rather than through :class:`aae.config.Settings`,
+    for the same reason this module does not import Settings at all:
+    migrations run in CI and deploy jobs that have no application
+    configuration, and schema management must not fail for reasons unrelated
+    to the schema. Reading the file is a convenience so that a deployer sets
+    the connection string in one place; it is deliberately not a dependency.
+
+    Returns:
+        The SQLAlchemy URL to migrate with.
+    """
+    programmatic = config.get_main_option("sqlalchemy.url", default=None)
+    if programmatic:
+        return programmatic
+
+    from_environment = os.environ.get(MIGRATION_URL_ENV)
+    if from_environment:
+        return from_environment
+
+    env_file = Path(".env")
+    if env_file.is_file():
+        from dotenv import dotenv_values
+
+        from_file = dotenv_values(env_file).get(MIGRATION_URL_ENV)
+        if from_file:
+            return from_file
+
+    return DEFAULT_MIGRATION_URL
+
+
+config.set_main_option("sqlalchemy.url", _migration_url())
 
 target_metadata = Base.metadata
 
