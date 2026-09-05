@@ -298,7 +298,53 @@ The practical lesson is narrower than "abstract your providers": **do not pin a
 model name from memory.** Query the backend's `/models` endpoint and pin
 against what it returns today. `.env.example` says so, with the command.
 
-## 17. Known weaknesses
+## 17. Round the figures before the model sees them
+
+Rule 3 of the selection prompt used to end "Round for readability if you wish;
+do not change the figure." A live notice then told an applicant their credit
+bureau score was 0.0935070975944776.
+
+That output is correct. It passes value accuracy, because it *is* the scored
+value. It is also not something any lender would post. The failure is invisible
+to five of the six checks, because none of them asks whether a true statement
+is a sayable one — only `readability` notices, and only in aggregate.
+
+Rounding is now done in `build_payload`, before the payload is assembled, so
+full precision never reaches the model. An instruction the model may decline to
+follow became a value it cannot obtain.
+
+Four significant figures carries a relative error below 5e-4, an order of
+magnitude inside the verifier's 0.005 tolerance for presentation rounding, so
+the rounding cannot cause a value-accuracy violation. A test asserts that
+relationship against both constants rather than stating it in a comment: if
+either moves, the test fails rather than the pipeline.
+
+Whole numbers are serialised as integers on the way into the prompt. JSON
+cannot express "a float that happens to be integral", so `136800.0` reached the
+model and was faithfully copied into a sentence about someone's annual income.
+
+## 18. A gate that only checks metrics can pass a run that did not happen
+
+`check_gate` verified that no metric had regressed and that `cases != 0`. The
+first live run against Groq lost four of its five cases to a token-per-minute
+limit and printed **GATE PASSED**, on the strength of the one case that
+completed.
+
+Every metric is computed over the cases that finished. That makes an incomplete
+run quietly self-flattering, and the survivors are not a random sample of the
+golden set: a token-per-minute limit falls hardest on the longest prompts,
+which are the hard cases. Their scores were then compared against a baseline
+measured over the whole set — two different populations, one number.
+
+The gate now fails when more than 10% of attempted cases were abandoned, and
+the message says the run is *unmeasured* rather than *worse*, because those
+require different responses: one is re-run it, the other is investigate it.
+
+The general form is worth stating, because it is not specific to rate limits:
+**an evaluation harness must gate on whether the evaluation happened before it
+gates on what the evaluation said.**
+
+## 19. Known weaknesses
 
 Listed because a design document that records only successes is a sales
 brochure.
