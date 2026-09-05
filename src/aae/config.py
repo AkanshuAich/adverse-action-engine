@@ -55,8 +55,24 @@ class Settings(BaseSettings):
         description="Owner connection, used only by Alembic. The application never uses this.",
     )
 
-    llm_provider: LLMProvider = LLMProvider.CEREBRAS
-    llm_model: str = "llama-3.3-70b"
+    llm_provider: LLMProvider = Field(
+        default=LLMProvider.GROQ,
+        description=(
+            "Which backend answers. Groq, not Cerebras: Cerebras withdrew its "
+            "free tier during this project and now returns 402 for every "
+            "model. The provider abstraction exists for exactly this, and the "
+            "migration was these two lines."
+        ),
+    )
+    llm_model: str = Field(
+        default="openai/gpt-oss-120b",
+        description=(
+            "Model identifier as the backend spells it. Pinned against a live "
+            "model listing rather than from memory: the previous default named "
+            "a model that had ceased to exist, which fails identically to a "
+            "bad credential."
+        ),
+    )
     cerebras_api_key: SecretStr | None = None
     groq_api_key: SecretStr | None = None
     ollama_base_url: str = "http://localhost:11434"

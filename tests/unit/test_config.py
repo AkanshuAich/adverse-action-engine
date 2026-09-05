@@ -25,7 +25,7 @@ class TestDefaults:
     def test_sensible_defaults(self):
         settings = _settings()
         assert settings.env is Environment.DEVELOPMENT
-        assert settings.llm_provider is LLMProvider.CEREBRAS
+        assert settings.llm_provider is LLMProvider.GROQ
         assert settings.jurisdiction == "india_rbi"
         assert settings.max_repair_attempts == 3
 

@@ -18,8 +18,16 @@ from pydantic import BaseModel, SecretStr
 
 from aae.config import LLMProvider, Settings
 from aae.domain.errors import ConfigurationError, ProviderError
-from aae.generation.providers.base import OpenAICompatibleProvider, ProviderConfig
-from aae.generation.providers.registry import BASE_URLS, build_provider
+from aae.generation.providers.base import (
+    OpenAICompatibleProvider,
+    ProviderConfig,
+    strict_schema,
+)
+from aae.generation.providers.registry import (
+    BASE_URLS,
+    SUPPORTS_JSON_SCHEMA,
+    build_provider,
+)
 
 
 class Answer(BaseModel):
@@ -27,6 +35,19 @@ class Answer(BaseModel):
 
     verdict: str
     score: float
+
+
+class Defaulted(BaseModel):
+    """Defaulted fields are what Pydantic leaves out of ``required``."""
+
+    name: str
+    items: list[str] = []
+
+
+class Nested(BaseModel):
+    """A schema whose shape lives in ``$defs``."""
+
+    inner: Defaulted
 
 
 def _config(**overrides: Any) -> ProviderConfig:
@@ -70,7 +91,7 @@ class TestSuccessfulCall:
 
         assert captured[0].headers["Authorization"] == "Bearer secret-value"
 
-    def test_requests_json_and_a_deterministic_temperature(self):
+    def test_requests_the_schema_and_a_deterministic_temperature(self):
         """A regulated notice should not vary between identical inputs."""
         captured: list[httpx.Request] = []
         provider = _provider_returning(
@@ -79,7 +100,9 @@ class TestSuccessfulCall:
         provider.complete(system="s", user="u", schema=Answer)
 
         body = json.loads(captured[0].content)
-        assert body["response_format"] == {"type": "json_object"}
+        assert body["response_format"]["type"] == "json_schema"
+        assert body["response_format"]["json_schema"]["name"] == "Answer"
+        assert body["response_format"]["json_schema"]["strict"] is True
         assert body["temperature"] == 0.0
         assert body["model"] == "test-model-1"
 
@@ -226,3 +249,69 @@ class TestEmbedderShapeGuard:
 
         with pytest.raises(RetrievalError, match="expects width 384"):
             embedder.embed(["text"])
+
+
+class TestConstrainedDecoding:
+    """Asking for JSON is not asking for the right JSON.
+
+    A bare ``json_object`` request buys syntactically valid JSON and nothing
+    more. Against a live backend this produced a well-formed object whose
+    fields were invented - ``reason`` and ``citation`` where the schema said
+    ``text`` - which fails validation and burns a repair attempt for no reason.
+    Sending the schema moves the shape from instruction to decoding constraint.
+    """
+
+    def test_the_schema_travels_with_the_request(self):
+        captured: list[httpx.Request] = []
+        provider = _provider_returning(
+            json.dumps({"verdict": "ok", "score": 1.0}), capture=captured
+        )
+        provider.complete(system="s", user="u", schema=Answer)
+
+        sent = json.loads(captured[0].content)["response_format"]["json_schema"]["schema"]
+        assert set(sent["properties"]) == {"verdict", "score"}
+
+    def test_every_property_is_required_because_strict_mode_demands_it(self):
+        """Pydantic omits defaulted fields; strict mode rejects that schema."""
+        schema = strict_schema(Defaulted)
+
+        assert schema["required"] == ["items", "name"]
+        assert schema["additionalProperties"] is False
+
+    def test_nested_objects_are_tightened_too(self):
+        """A nested definition left loose fails the whole request, not part."""
+        schema = strict_schema(Nested)
+        inner = schema["$defs"]["Defaulted"]
+
+        assert inner["required"] == ["items", "name"]
+        assert inner["additionalProperties"] is False
+
+    def test_a_backend_without_support_asks_only_for_valid_json(self):
+        """Ollama's compatibility surface has carried this unevenly."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": '{"verdict": "ok", "score": 1.0}'}}]},
+            )
+
+        config = ProviderConfig(
+            name="ollama",
+            base_url="http://localhost:11434/v1",
+            model="qwen2.5:3b",
+            supports_json_schema=False,
+        )
+        provider = OpenAICompatibleProvider(
+            config, client=httpx.Client(transport=httpx.MockTransport(handler))
+        )
+        provider.complete(system="s", user="u", schema=Answer)
+
+        body = json.loads(captured[0].content)
+        assert body["response_format"] == {"type": "json_object"}
+
+    def test_the_local_backend_is_the_only_one_declared_unsupported(self):
+        assert SUPPORTS_JSON_SCHEMA[LLMProvider.GROQ] is True
+        assert SUPPORTS_JSON_SCHEMA[LLMProvider.CEREBRAS] is True
+        assert SUPPORTS_JSON_SCHEMA[LLMProvider.OLLAMA] is False

@@ -32,6 +32,16 @@ BASE_URLS: Final[dict[LLMProvider, str]] = {
     LLMProvider.OLLAMA: "http://localhost:11434/v1",
 }
 
+# Whether the backend will constrain decoding to a supplied JSON schema.
+# Ollama's compatibility surface has carried this unevenly across versions, so
+# it is declared unsupported: the adapter then asks only for valid JSON and
+# leans on validation, which is the weaker guarantee but never a wrong one.
+SUPPORTS_JSON_SCHEMA: Final[dict[LLMProvider, bool]] = {
+    LLMProvider.CEREBRAS: True,
+    LLMProvider.GROQ: True,
+    LLMProvider.OLLAMA: False,
+}
+
 
 def build_provider(settings: Settings, client: httpx.Client | None = None) -> StructuredProvider:
     """Construct the configured provider.
@@ -61,6 +71,7 @@ def build_provider(settings: Settings, client: httpx.Client | None = None) -> St
         # scoring API and the migrations call no model and must not require a
         # credential to start.
         api_key=settings.llm_api_key(),
+        supports_json_schema=SUPPORTS_JSON_SCHEMA[provider],
     )
 
     logger.info("llm_provider_selected", provider=config.name, model=config.model)

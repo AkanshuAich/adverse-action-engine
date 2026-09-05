@@ -240,7 +240,65 @@ is how the missing notice content in the generation record was found.
 
 ---
 
-## 15. Known weaknesses
+## 15. Constrain the decoder, do not ask the model nicely
+
+The provider originally sent `response_format: {"type": "json_object"}`. That
+guarantees the response parses as JSON. It guarantees nothing about which keys
+the JSON has.
+
+Against a live backend this failed exactly as you would expect once stated
+plainly. The model returned a well-formed, entirely reasonable object with
+invented field names — `reason` and `citation` on each principal reason, plus
+a top-level `decision_statement` and `grievance_contact` — where
+`SelectedNotice` declares `text`. Fifteen validation errors, a provider error,
+and a repair attempt burned on a problem no amount of reprompting fixes
+reliably, because the schema was never actually communicated.
+
+The adapter now sends the Pydantic JSON schema with `strict: true`, so the
+shape is a decoding constraint rather than an instruction the model is free to
+reinterpret. Pydantic's generated schema needs one transformation first: strict
+mode requires every property to appear in `required`, and Pydantic omits fields
+that have defaults. Listing them all is sound here because every optional field
+defaults to an empty collection — the model is being asked to supply the key,
+not to invent content for it.
+
+Validation still runs on arrival. The constraint makes a wrong shape unlikely;
+it does not make it impossible, and a backend that ignores the constraint must
+still fail as a provider error rather than flow onward half-populated.
+
+`ProviderConfig.supports_json_schema` is declared per backend rather than
+discovered by catching a 400. Ollama's OpenAI-compatible surface has carried
+this feature unevenly across versions, so it is declared unsupported and falls
+back to `json_object` — a known, recorded limitation rather than a silent
+downgrade.
+
+## 16. One provider vanished, and the abstraction paid for itself
+
+Cerebras was the primary backend: 1M tokens/day, no credit card. Partway
+through, it began answering `402 Payment required` for every model, and the
+model this project had pinned — `llama-3.3-70b` — no longer appeared in its
+catalogue at all.
+
+Two failure modes worth separating, because they look identical from the
+outside:
+
+- **A renamed model returns 404**, which reads as a configuration error.
+- **A withdrawn free tier returns 402**, which reads as a billing error.
+
+Neither is a bad credential, and both are indistinguishable from one if you
+only look at "the LLM call failed". The key authenticated fine throughout.
+
+The migration to Groq was two environment variables. Nothing in the generation
+graph, the verifier, the audit chain, or the evaluation harness changed,
+because none of them knows which backend answered. This is the case for the
+abstraction, and it is worth more as a thing that actually happened than as a
+paragraph about hypothetical vendor risk.
+
+The practical lesson is narrower than "abstract your providers": **do not pin a
+model name from memory.** Query the backend's `/models` endpoint and pin
+against what it returns today. `.env.example` says so, with the command.
+
+## 17. Known weaknesses
 
 Listed because a design document that records only successes is a sales
 brochure.

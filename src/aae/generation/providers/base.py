@@ -9,11 +9,15 @@ provider is configuration rather than code.
 Free tiers moved materially during 2026, which is the practical argument for
 this abstraction: the graph above it never learns which backend answered.
 
-Structured output is requested as JSON and then *validated* against the
-expected schema rather than trusted. A model that returns prose, truncated
-JSON, or a plausible object with the wrong fields is a normal occurrence, not
-an exceptional one, and it must fail as a provider error rather than flow
-onward as a half-populated notice.
+Structured output is *constrained* to the expected schema at the decoder,
+and then validated again on arrival. Asking for ``json_object`` only buys
+syntactically valid JSON: it leaves the model free to invent field names, and
+models do. Sending the schema itself makes the shape a decoding constraint
+rather than an instruction the model may reinterpret.
+
+Validation still runs afterwards. A backend that ignores the constraint, or
+one configured without support for it, must fail as a provider error rather
+than flow onward as a half-populated notice.
 """
 
 from __future__ import annotations
@@ -37,6 +41,37 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 
 DEFAULT_TIMEOUT_SECONDS: Final[float] = 90.0
 DEFAULT_MAX_TOKENS: Final[int] = 2_000
+
+
+def strict_schema(schema: type[BaseModel]) -> dict[str, Any]:
+    """Convert a Pydantic schema into one strict structured output accepts.
+
+    Strict mode requires every property of every object to be listed in
+    ``required`` and additional properties to be forbidden. Pydantic omits
+    fields that have defaults, so the schema it generates is rejected as
+    written. Listing them all is sound here because every optional field on
+    these models defaults to an empty collection: the model is being asked to
+    supply the key, not to invent content for it.
+
+    Args:
+        schema: The model the response must satisfy.
+
+    Returns:
+        A JSON schema suitable for ``strict: true``.
+    """
+
+    def tighten(node: Any) -> Any:
+        if isinstance(node, dict):
+            tightened = {key: tighten(value) for key, value in node.items()}
+            if tightened.get("type") == "object" and "properties" in tightened:
+                tightened["required"] = sorted(tightened["properties"])
+                tightened["additionalProperties"] = False
+            return tightened
+        if isinstance(node, list):
+            return [tighten(item) for item in node]
+        return node
+
+    return dict(tighten(schema.model_json_schema()))
 
 
 @runtime_checkable
@@ -89,6 +124,10 @@ class ProviderConfig:
         api_key: Credential, or ``None`` for a local backend.
         timeout_seconds: Wall-clock budget for one call.
         max_tokens: Ceiling on the response.
+        supports_json_schema: Whether the backend can constrain decoding to a
+            supplied schema. Declared per backend rather than discovered by
+            catching a 400, so an unsupported backend is a known limitation
+            recorded in configuration and not a silent downgrade.
     """
 
     name: str
@@ -97,6 +136,7 @@ class ProviderConfig:
     api_key: SecretStr | None = None
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     max_tokens: int = DEFAULT_MAX_TOKENS
+    supports_json_schema: bool = True
 
 
 class OpenAICompatibleProvider:
@@ -156,7 +196,7 @@ class OpenAICompatibleProvider:
             "model": self._config.model,
             "temperature": temperature,
             "max_tokens": self._config.max_tokens,
-            "response_format": {"type": "json_object"},
+            "response_format": self._response_format(schema),
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -183,6 +223,27 @@ class OpenAICompatibleProvider:
             raise ProviderError(msg)
 
         return self._parse(response.json(), schema)
+
+    def _response_format(self, schema: type[BaseModel]) -> dict[str, Any]:
+        """Describe the required response shape to the backend.
+
+        Args:
+            schema: The model the response must satisfy.
+
+        Returns:
+            A ``response_format`` object: the schema itself where the backend
+            supports it, and otherwise a bare request for valid JSON.
+        """
+        if not self._config.supports_json_schema:
+            return {"type": "json_object"}
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema.__name__,
+                "schema": strict_schema(schema),
+                "strict": True,
+            },
+        }
 
     def _parse(self, body: dict[str, Any], schema: type[ModelT]) -> ModelT:
         """Extract and validate the structured payload.
