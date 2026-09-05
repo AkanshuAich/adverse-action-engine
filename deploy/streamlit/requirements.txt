@@ -1,0 +1,14 @@
+# Found before the repository root, so this is the file Community Cloud uses.
+# The root pyproject.toml would otherwise be handed to poetry, which cannot
+# build a hatchling project.
+#
+# Installed from git rather than "." because the working directory during
+# dependency resolution is not something the platform documents, and a build
+# that fails on that ambiguity costs more than the extra fetch. Community Cloud
+# rebuilds on every push to main and installs main, so the deployed code is the
+# commit that triggered the deploy.
+#
+# No ml extra: the console reads the audit chain and renders it. It loads no
+# model and imports neither pandas nor numpy.
+adverse-action-engine @ git+https://github.com/AkanshuAich/adverse-action-engine@main
+streamlit>=1.40
