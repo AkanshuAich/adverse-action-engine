@@ -61,6 +61,19 @@ GATED_METRICS: Final[tuple[str, ...]] = (
 )
 """Metrics a change may not degrade. Higher is better for every one."""
 
+MAX_PROVIDER_FAILURE_RATE: Final[float] = 0.10
+"""How many cases may be abandoned before the run stops meaning anything.
+
+Metrics are computed over the cases that finished. If a tenth of the golden
+set never reached the verifier, the survivors are not a random sample of it -
+a rate limit falls hardest on the longest prompts, which are the hard cases -
+and comparing their scores to a baseline measured over the whole set is
+comparing two different populations.
+
+Observed: a five-case trial run against a live backend lost four cases to a
+rate limit and reported GATE PASSED on the strength of the one that survived.
+"""
+
 REGRESSION_TOLERANCE: Final[float] = 0.03
 """How far a gated metric may fall below baseline before the gate fires.
 
@@ -93,13 +106,20 @@ def check_gate(
     baseline: dict[str, Any] | None,
     *,
     tolerance: float = REGRESSION_TOLERANCE,
+    max_provider_failure_rate: float = MAX_PROVIDER_FAILURE_RATE,
 ) -> GateResult:
     """Decide whether a run is acceptable.
+
+    A run can fail without any metric moving. If most cases never reached the
+    verifier the numbers describe a handful of survivors, so completeness is
+    checked before the metrics are believed at all.
 
     Args:
         metrics: The run just completed.
         baseline: The committed reference, or ``None`` on a first run.
         tolerance: How far a gated metric may fall.
+        max_provider_failure_rate: Share of cases that may be abandoned before
+            the run is treated as unmeasured rather than merely worse.
 
     Returns:
         The verdict and every reason it failed.
@@ -114,6 +134,15 @@ def check_gate(
 
     if metrics.cases == 0:
         failures.append("no cases were evaluated; the golden set produced nothing to measure")
+
+    attempted = metrics.cases + metrics.provider_failures
+    if attempted and metrics.provider_failures / attempted > max_provider_failure_rate:
+        failures.append(
+            f"{metrics.provider_failures} of {attempted} cases were abandoned at the "
+            f"provider, above the {max_provider_failure_rate:.0%} ceiling. The metrics "
+            "below describe only the cases that finished, which is not the golden set: "
+            "they must not be compared against a baseline measured over all of it."
+        )
 
     if baseline is None:
         logger.warning("no_baseline", detail="Recording this run as the baseline.")

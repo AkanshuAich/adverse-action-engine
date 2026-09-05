@@ -19,7 +19,11 @@ from evals.readability import (
     count_syllables,
     score_readability,
 )
-from evals.runner import REGRESSION_TOLERANCE, check_gate
+from evals.runner import (
+    MAX_PROVIDER_FAILURE_RATE,
+    REGRESSION_TOLERANCE,
+    check_gate,
+)
 from evals.simulator import PERFECT, FailureProfile, SimulatedProvider, parse_prompt
 
 from aae.domain.errors import ProviderError
@@ -218,6 +222,33 @@ class TestGate:
         result = check_gate(_metrics([]), None)
         assert not result.passed
         assert any("no cases" in failure for failure in result.failures)
+
+    def test_fires_when_most_of_the_run_never_happened(self):
+        """A green gate over four abandoned cases is worse than a red one.
+
+        Observed against a live backend: a rate limit abandoned four of five
+        cases and the gate passed on the one that survived. Metrics are
+        computed over cases that finished, so a run that mostly did not finish
+        reports the scores of its survivors and calls them the system's.
+        """
+        metrics = _metrics([_case()], provider_failures=4)
+        result = check_gate(metrics, metrics.to_dict())
+
+        assert not result.passed
+        assert any("abandoned at the provider" in failure for failure in result.failures)
+
+    def test_tolerates_the_occasional_abandoned_case(self):
+        """A single flaky call should not block a merge."""
+        cases = [_case() for _ in range(100)]
+        metrics = _metrics(cases, provider_failures=1)
+
+        assert MAX_PROVIDER_FAILURE_RATE > 0.01
+        assert check_gate(metrics, metrics.to_dict()).passed
+
+    def test_a_complete_run_is_not_penalised(self):
+        metrics = _metrics([_case() for _ in range(10)], provider_failures=0)
+
+        assert check_gate(metrics, metrics.to_dict()).passed
 
     def test_the_verdict_names_every_failure(self):
         metrics = _metrics([_case(prohibited_in_issued=True)])

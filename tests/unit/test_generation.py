@@ -504,8 +504,11 @@ class TestPresentationRounding:
         [0.0935070975944776, 1.8347953216374269, 136_800.0, 0.0001234567, 9.999999],
     )
     def test_stays_within_the_verifier_tolerance(self, exact: float):
-        """Rounding must be invisible to value accuracy, or it trades one bug
-        for a worse one: a letter that reads well and fails verification."""
+        """Rounding must stay invisible to value accuracy.
+
+        Otherwise it trades one defect for a worse one: a letter that reads
+        well and fails verification.
+        """
         rounded = round_for_presentation(exact)
 
         assert abs(rounded - exact) <= abs(exact) * VerificationPolicy().value_relative_tolerance
