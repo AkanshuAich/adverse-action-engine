@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from aae.database_url import normalise_database_url
 from aae.logging import get_logger
 
 if TYPE_CHECKING:
@@ -35,7 +36,7 @@ def create_database_engine(settings: Settings, *, echo: bool = False) -> Engine:
         A configured engine.
     """
     engine = create_engine(
-        settings.database_url,
+        normalise_database_url(settings.database_url),
         echo=echo,
         # Recycle before typical managed-Postgres idle timeouts (Neon closes
         # idle connections), and check liveness rather than handing out a

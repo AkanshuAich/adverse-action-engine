@@ -60,6 +60,31 @@ curl -X POST localhost:8000/v1/notices -H 'content-type: application/json' -d @s
 
 ## Verifying the deployment
 
-The console sidebar reports the audit chain state. If it shows anything other
-than "Audit chain intact", stop: recorded history cannot be trusted and nothing
-on the screen should be acted on until it is explained.
+Migrations succeeding proves the tables exist. It proves nothing about whether
+the privilege split survived, and that split is what makes the audit log
+evidence rather than a table. Check it:
+
+```bash
+python -m aae.audit.healthcheck
+```
+
+It connects as the **application** role, confirms the schema and pgvector,
+writes a correctly chained probe record, and asserts that Postgres refuses
+`UPDATE`, `DELETE` and `TRUNCATE`. Anything other than `HEALTHY` means do not
+route traffic there.
+
+Run it as the application role, never the owner: the owner is *meant* to be
+able to modify the table, so checking as the owner reports success while
+proving nothing.
+
+The console sidebar reports the same chain state continuously. If it shows
+anything other than "Audit chain intact", stop: recorded history cannot be
+trusted and nothing on the screen should be acted on until it is explained.
+
+## Connection strings
+
+Paste them from Neon exactly as given. A bare `postgresql://` scheme is
+normalised to `postgresql+psycopg://` automatically, because that is the only
+driver installed and the alternative is a traceback naming a library this
+project does not use. Keep `?sslmode=require`, and use the direct endpoint
+rather than the one with `-pooler` in the host for migrations.

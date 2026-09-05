@@ -21,6 +21,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from aae.audit.models import Base
+from aae.database_url import normalise_database_url
 
 MIGRATION_URL_ENV = "AAE_MIGRATION_DATABASE_URL"
 DEFAULT_MIGRATION_URL = "postgresql+psycopg://aae_owner:aae_dev_password@localhost:5433/aae"
@@ -67,7 +68,7 @@ def _migration_url() -> str:
     return DEFAULT_MIGRATION_URL
 
 
-config.set_main_option("sqlalchemy.url", _migration_url())
+config.set_main_option("sqlalchemy.url", normalise_database_url(_migration_url()))
 
 target_metadata = Base.metadata
 

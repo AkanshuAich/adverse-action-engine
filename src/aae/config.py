@@ -9,9 +9,10 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from aae.database_url import normalise_database_url
 from aae.domain.errors import ConfigurationError
 
 
@@ -64,6 +65,24 @@ class Settings(BaseSettings):
     decision_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     top_k_factors: int = Field(default=5, ge=1, le=20)
     max_repair_attempts: int = Field(default=3, ge=1, le=10)
+
+    @field_validator("database_url", "migration_database_url")
+    @classmethod
+    def _normalise_driver(cls, value: str) -> str:
+        """Accept a connection string exactly as a provider hands it out.
+
+        Managed Postgres services give URLs beginning ``postgresql://``, which
+        SQLAlchemy reads as a request for psycopg2. Only psycopg 3 is
+        installed, so a bare scheme is always a mistake with always the same
+        fix, and normalising it means a pasted string works.
+
+        Args:
+            value: The configured URL.
+
+        Returns:
+            The URL with an explicit driver.
+        """
+        return normalise_database_url(value)
 
     def llm_api_key(self) -> SecretStr | None:
         """Return the API key for the selected provider, checking it exists.
